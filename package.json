@@ -1,0 +1,51 @@
+{
+  "name": "tab-organizer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI-powered Chrome tab organizer — 100% on-device, no cloud LLM",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "compile": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "latest",
+    "@lucide/svelte": "^1.17.0",
+    "svelte": "latest",
+    "tldts": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@sveltejs/vite-plugin-svelte": "latest",
+    "@tailwindcss/vite": "latest",
+    "@webext-core/fake-browser": "^1.3.0",
+    "@wxt-dev/module-svelte": "latest",
+    "chrome-types": "latest",
+    "eslint": "latest",
+    "eslint-plugin-svelte": "latest",
+    "prettier": "latest",
+    "prettier-plugin-svelte": "latest",
+    "svelte-check": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vitest": "latest",
+    "wxt": "latest"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "overrides": {
+      "@webext-core/fake-browser": "1.3.4"
+    }
+  }
+}

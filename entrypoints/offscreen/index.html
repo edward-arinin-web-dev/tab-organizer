@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>tab-organizer offscreen</title>
+  </head>
+  <body>
+    <!--
+      Hosts long-lived on-device inference sessions (Chrome Prompt API in Phase 2,
+      bundled transformers.js + Gemma 3 270M in Phase 3). The service worker dies
+      after ~30s idle; this page stays alive while the background holds a
+      runtime.connect port open.
+    -->
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

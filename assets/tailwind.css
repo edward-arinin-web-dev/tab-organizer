@@ -1,0 +1,215 @@
+@import 'tailwindcss';
+
+/* ============================================================
+   Tab Organizer v2 — design tokens
+   See design/VISION.md for the rationale behind each value.
+   ============================================================ */
+@theme {
+  /* Teal-tinted neutral ink scale (light) — MUTED, not bright white, so the
+     small popup isn't a lightbox. Tinted toward the jade brand hue. */
+  --color-ink-0: #edf1f0;
+  --color-ink-50: #e1e8e6;
+  --color-ink-100: #d2dcd9;
+  --color-ink-200: #b2bfbb;
+  --color-ink-400: #5f6e6a;
+  --color-ink-700: #1e2a28;
+  --color-ink-900: #08201e; /* deep teal-black — same family as the icon base */
+
+  /* Accent is SPLIT on purpose:
+     --color-accent      : deep teal for TEXT-BEARING surfaces (buttons, badges).
+                           White-on-#0f766e ≈ 5:1 → passes WCAG AA.
+     --color-glow        : bright jade for GLOWS / DOTS / RINGS only — never put
+                           text on it (white-on-#2dd4bf ≈ 1.7:1, fails). */
+  --color-accent: #0f766e;
+  --color-accent-soft: #ccfbf1;
+  --color-accent-strong: #115e59; /* darker — hover / pressed */
+  --color-glow: #2dd4bf;
+
+  /* Spark: mint highlight (same hue family — no warm/pink Siri tell). */
+  --color-spark: #5eead4;
+  --color-spark-soft: #d5fbf2;
+  --color-spark-strong: #0d9488;
+
+  /* Status — used sparingly. ok stays in-brand teal; err rose is the one
+     deliberate out-of-family hue so danger actually stands out. */
+  --color-ok: #0f766e;
+  --color-warn: #f59e0b;
+  --color-err: #f43f5e;
+
+  --color-success: #0d9488;
+  --color-success-soft: #ccfbf1;
+  --color-success-strong: #115e59;
+
+  /* Workspace presets — these are USER group colors, so variety helps tell
+     groups apart. Brand-teal leads; a few distinct hues for separation. */
+  --color-ws-1: #2dd4bf; /* jade */
+  --color-ws-2: #0ea5e9; /* sky */
+  --color-ws-3: #34d399; /* emerald */
+  --color-ws-4: #6366f1; /* indigo */
+  --color-ws-5: #f59e0b; /* amber */
+  --color-ws-6: #14b8a6; /* teal */
+  --color-ws-7: #94a3b8; /* slate */
+  --color-ws-8: #f472b6; /* pink */
+
+  /* Type scale (px, fixed — no rem so shadow DOM stays predictable) */
+  --text-xxs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 17px;
+  --text-xl: 22px;
+  --text-2xl: 30px;
+
+  /* Off-grid spacing scale (2 / 6 / 10 / 14 / 22 / 36) */
+  --spacing-1: 2px;
+  --spacing-2: 6px;
+  --spacing-3: 10px;
+  --spacing-4: 14px;
+  --spacing-5: 22px;
+  --spacing-6: 36px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+
+  /* Fonts: prefer system Inter / Display variants; bundle later if desired */
+  --font-sans:
+    'Inter Display', 'InterDisplay', 'Inter', -apple-system, 'Segoe UI Variable Display',
+    'Segoe UI', system-ui, sans-serif;
+  --font-mono:
+    'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0.05, 0.36, 1);
+  /* CSS linear() spring — physical settle for group/dedupe result reveals. */
+  --ease-spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849, 0.957, 1.045, 1.097 46.9%, 1.06, 1.011 58%, 0.98, 0.989, 1.001 85.1%, 1.005, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 400ms;
+  --duration-emerge: 600ms;
+}
+
+/* Dark-mode counterpart, system-preference driven by default. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-ink-0: #07211f; /* deep teal-black — polished primary surface */
+    --color-ink-50: #0e2a27;
+    --color-ink-100: #143430;
+    --color-ink-200: #234b45;
+    --color-ink-400: #7c918b;
+    --color-ink-700: #cfe0db;
+    --color-ink-900: #eff5f2;
+    --color-accent: #2dd4bf; /* bright jade on dark; dark ink-0 text sits on it */
+    --color-accent-soft: #0c2e2a;
+    --color-accent-strong: #5eead4;
+  }
+}
+
+/* Manual override classes for popup/options when system pref isn't right. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-ink-0: #07211f;
+  --color-ink-50: #0e2a27;
+  --color-ink-100: #143430;
+  --color-ink-200: #234b45;
+  --color-ink-400: #7c918b;
+  --color-ink-700: #cfe0db;
+  --color-ink-900: #eff5f2;
+  --color-accent: #2dd4bf;
+  --color-accent-soft: #0c2e2a;
+  --color-accent-strong: #5eead4;
+}
+
+/* Global element baseline. */
+html,
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03', 'tnum';
+  background: var(--color-ink-0);
+  color: var(--color-ink-900);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Animated underline for the ●local dot when an AI action runs. */
+@keyframes local-pulse {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.local-pulse {
+  animation: local-pulse 1s var(--ease-out) 1;
+}
+
+/* Toast slide-in from bottom-right. */
+@keyframes toast-emerge {
+  0% {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.toast-emerge {
+  animation: toast-emerge var(--duration-emerge) var(--ease-out) 1;
+}
+
+/* Staggered result reveal — physical settle for workspace/list entries. */
+@keyframes reveal-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.reveal-rise {
+  animation: reveal-rise var(--duration-base) var(--ease-spring) both;
+}
+
+/* Keyboard keycap — JetBrains Mono, hairline, for ⌘K and inline keys. */
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--color-ink-100);
+  color: var(--color-ink-400);
+  box-shadow: inset 0 -1px 0 0 color-mix(in oklch, var(--color-ink-200) 60%, transparent);
+}
+
+/* Honor reduced motion across all custom animations. */
+@media (prefers-reduced-motion: reduce) {
+  .local-pulse,
+  .toast-emerge,
+  .reveal-rise {
+    animation: none !important;
+    transition: opacity var(--duration-fast) linear !important;
+  }
+  * {
+    transition-duration: var(--duration-fast) !important;
+  }
+}
+
+/* Universal focus ring honouring the design system. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}

@@ -1,0 +1,17 @@
+node_modules/
+.wxt/
+.output/
+dist/
+*.log
+.env
+.env.local
+.DS_Store
+playwright-report/
+test-results/
+
+# Local design-preview harness artifacts (keep the *.mjs / *.html scripts)
+design/.pw-profile/
+design/*.png
+
+# Stray Windows reserved-name file (cannot be tracked by git)
+nul
