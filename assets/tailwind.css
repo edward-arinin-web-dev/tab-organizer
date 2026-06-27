@@ -11,7 +11,7 @@
   --color-ink-50: #e1e8e6;
   --color-ink-100: #d2dcd9;
   --color-ink-200: #b2bfbb;
-  --color-ink-400: #5f6e6a;
+  --color-ink-400: #4f5d59; /* darkened: ~5.4:1 on ink-50 for WCAG AA (was #5f6e6a ≈ 4.3:1) */
   --color-ink-700: #1e2a28;
   --color-ink-900: #08201e; /* deep teal-black — same family as the icon base */
 
@@ -198,7 +198,10 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .local-pulse,
   .toast-emerge,
-  .reveal-rise {
+  .reveal-rise,
+  .animate-spin,
+  .animate-ping,
+  .shimmer-sweep {
     animation: none !important;
     transition: opacity var(--duration-fast) linear !important;
   }

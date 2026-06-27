@@ -37,7 +37,9 @@ Productivity
 > - Network traffic only when you opt into the bundled Gemma 3 model — one-time weight download from HuggingFace.
 > - If you stay on Tier 1 (Chrome built-in) or rule-based mode: zero network calls.
 >
-> See PRIVACY.md in the source repo for the full policy.
+> Full privacy policy: **&lt;HOSTED_PRIVACY_URL&gt;** — ⚠️ before submitting, publish PRIVACY.md to a
+> public URL (GitHub Pages or a repo raw/blob permalink) and paste that URL into the dashboard's
+> required "Privacy policy" field. A repo markdown file alone is not accepted by the dashboard.
 >
 > ### Requirements
 > - Chrome 138+
@@ -64,12 +66,16 @@ Productivity
 | `tabs` | Read tab titles, URLs, last-accessed timestamps for grouping/dedupe/stash |
 | `tabGroups` | Apply grouping decisions via `chrome.tabGroups.update` |
 | `storage` | Persist stashed sessions, recaps, focus state, AI download progress |
-| `offscreen` | Host the LLM inference page (LanguageModel / Summarizer / Gemma have no service-worker access) |
+| `offscreen` | Host the on-device LLM inference page (LanguageModel / Summarizer / Gemma have no service-worker access) |
 | `sidePanel` | Render the Recaps / Tab graph / Unread side panel UI |
-| `scripting` | Inject one-liner to read `document.body.innerText` when the user invokes "summarize this tab" |
-| `host_permissions` for `huggingface.co` + `*.huggingface.co` + `cdn-lfs.huggingface.co` + `cdn-lfs-us-1.huggingface.co` | One-time download of Gemma 3 270M model weights, only when the user enables Tier 2 |
+| `bookmarks` | Optional bookmark-folder sync — mirror a pinned workspace into a Chrome bookmark folder. Read/write only; nothing is ever uploaded |
+| `contextMenus` | Right-click "Organize / Stash" entries |
+| `alarms` | Schedule local periodic jobs (stale-tab decay sweep, daily digest, reading-queue scan). Local only |
+| `notifications` | Local event notices (model ready, monthly AI limit reached, focus exit, auto-group done). Local only, never networked |
+| `omnibox` | The `tabs` address-bar keyword for quick command access |
+| `host_permissions` for `huggingface.co` + `*.huggingface.co` + `cdn-lfs.huggingface.co` + `cdn-lfs-us-1.huggingface.co` | One-time download of Gemma 3 270M model weights, only when the user enables Tier 2. A static CDN for bytes — not an inference service |
 
-No other permissions requested.
+These are all the permissions requested; each is exercised by a shipped feature.
 
 ## Single-purpose declaration
 

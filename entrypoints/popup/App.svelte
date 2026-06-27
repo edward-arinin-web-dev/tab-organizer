@@ -17,6 +17,7 @@
   import CornerUpLeft from '@lucide/svelte/icons/corner-up-left';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import PanelRight from '@lucide/svelte/icons/panel-right';
+  import Plus from '@lucide/svelte/icons/plus';
   import Target from '@lucide/svelte/icons/target';
   import Layers from '@lucide/svelte/icons/layers';
   import {
@@ -29,6 +30,7 @@
     SuggestionPanel,
     ShimmerBar,
     SuccessBurst,
+    InstructionEditor,
   } from '~/ui';
   import { suggestionQueue, type Suggestion } from '~/core/storage/suggestions';
   import { activity, canUndo as canUndoEntry, type ActivityEntry } from '~/core/storage/activity';
@@ -89,6 +91,19 @@
   );
 
   let paletteOpen = $state(false);
+
+  // Quick-add for Custom Rules — full management lives in the side panel.
+  let showRuleInput = $state(false);
+  async function addRule(text: string) {
+    try {
+      await sendCommand({ type: 'addInstruction', text });
+      status = 'Rule added & applied.';
+      showRuleInput = false;
+      await refresh();
+    } catch (err) {
+      status = err instanceof Error ? err.message : String(err);
+    }
+  }
 
   onMount(() => {
     void refresh();
@@ -484,6 +499,22 @@
       {/each}
     {/if}
   </section>
+
+  <!-- Quick-add a Custom Rule -->
+  <div class="mt-(--spacing-3)">
+    {#if showRuleInput}
+      <InstructionEditor onsubmit={addRule} oncancel={() => (showRuleInput = false)} />
+    {:else}
+      <button
+        type="button"
+        class="flex w-full items-center justify-center gap-1.5 rounded-(--radius-md) bg-ink-50 px-(--spacing-3) py-(--spacing-2)
+               text-xs font-medium text-ink-700 hover:bg-ink-100 transition-colors"
+        onclick={() => (showRuleInput = true)}
+      >
+        <Plus size={13} strokeWidth={1.75} /> Add a grouping rule
+      </button>
+    {/if}
+  </div>
 
   <!-- Live download progress (when applicable) -->
   {#if nanoProg && nanoProg.state !== 'done'}

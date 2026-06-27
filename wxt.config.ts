@@ -7,7 +7,7 @@ export default defineConfig({
 
   manifest: {
     name: 'Tab Organizer',
-    description: 'AI-powered tab organization — 100% on-device.',
+    description: 'AI-powered tab organization — on-device AI, your tabs never leave your device.',
     // MV3 default CSP blocks WebAssembly compilation. Tier-2 (Gemma 3 270M
     // via transformers.js + ONNX runtime) needs WASM to run. 'wasm-unsafe-eval'
     // is the MV3-blessed token that allows WASM without permitting any
@@ -21,7 +21,6 @@ export default defineConfig({
       'storage',
       'offscreen',
       'sidePanel',
-      'scripting',
       'bookmarks',
       'contextMenus',
       'alarms',
@@ -38,16 +37,33 @@ export default defineConfig({
       'https://cdn-lfs.huggingface.co/*',
       'https://cdn-lfs-us-1.huggingface.co/*',
     ],
-    web_accessible_resources: [
-      {
-        resources: ['offscreen.html', 'ort/*'],
-        matches: ['<all_urls>'],
-      },
-    ],
+    // No web_accessible_resources: offscreen.html and ort/* are loaded from the
+    // extension context (chrome.offscreen.createDocument / chrome.runtime.getURL
+    // inside the offscreen page), so they never need to be web-accessible.
+    // Exposing them to <all_urls> would only add a fingerprinting surface.
   },
 
   vite: () => ({
-    plugins: [tailwindcss()],
+    plugins: [
+      tailwindcss(),
+      {
+        // @huggingface/transformers → onnxruntime-web makes Vite emit a ~23.5MB
+        // copy of the ORT wasm into assets/. At runtime we load ORT ONLY from
+        // public/ort/ (gemma-client sets env.wasm.wasmPaths =
+        // chrome.runtime.getURL('ort/')), so the assets/ copy is never fetched —
+        // it's dead weight that ~doubled the install size. Drop it from the
+        // bundle output; the public/ort/ copy is unaffected (WXT copies public/
+        // verbatim, outside this bundle).
+        name: 'drop-duplicate-ort-wasm',
+        generateBundle(_options, bundle) {
+          for (const name of Object.keys(bundle)) {
+            if (/ort-wasm.*\.wasm$/.test(name) && !name.startsWith('ort/')) {
+              delete bundle[name];
+            }
+          }
+        },
+      },
+    ],
   }),
 
   // In dev, WXT launches a fresh Chrome profile. Pass flags to allow the

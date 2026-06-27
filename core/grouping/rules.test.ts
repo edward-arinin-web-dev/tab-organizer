@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clusterTabs, colorForKey, type TabLike } from './rules';
+import { clusterTabs, colorForKey, isGroupable, type TabLike } from './rules';
 
 function mk(id: number, url: string, title = ''): TabLike {
   return { id, url, title };
@@ -31,7 +31,9 @@ describe('clusterTabs — category buckets', () => {
     expect(sys?.tabIds.sort()).toEqual([5, 6]);
   });
 
-  it('splits a multi-domain category bucket by domain (same color)', () => {
+  it('keeps a multi-domain category as ONE group (no domain sub-split)', () => {
+    // Parity with the per-tab auto path: github + stackoverflow are both Code,
+    // so they land in a single "💻 Code" group rather than per-domain shards.
     const groups = clusterTabs([
       mk(1, 'https://github.com/foo'),
       mk(2, 'https://github.com/bar'),
@@ -39,16 +41,11 @@ describe('clusterTabs — category buckets', () => {
       mk(4, 'https://stackoverflow.com/q/456'),
     ]);
 
-    const githubGroup = groups.find((g) => g.key === 'cat:code:github.com');
-    const soGroup = groups.find((g) => g.key === 'cat:code:stackoverflow.com');
-
-    expect(githubGroup?.label).toBe('💻 Code · github.com');
-    expect(githubGroup?.tabIds.sort()).toEqual([1, 2]);
-    expect(soGroup?.label).toBe('💻 Code · stackoverflow.com');
-    expect(soGroup?.tabIds.sort()).toEqual([3, 4]);
-
-    // Sibling sub-groups share the category color.
-    expect(githubGroup?.color).toBe(soGroup?.color);
+    const code = groups.find((g) => g.key === 'cat:code');
+    expect(code?.label).toBe('💻 Code');
+    expect(code?.tabIds.sort()).toEqual([1, 2, 3, 4]);
+    // Exactly one Code group — no "cat:code:github.com" / "cat:code:stackoverflow.com".
+    expect(groups.filter((g) => g.key.startsWith('cat:code'))).toHaveLength(1);
   });
 
   it('keeps System Tabs as a single bucket even with mixed protocols', () => {
@@ -161,5 +158,28 @@ describe('colorForKey', () => {
     for (const key of ['github.com', 'gmail.com', 'jira.atlassian.com', 'x']) {
       expect(valid.has(colorForKey(key))).toBe(true);
     }
+  });
+});
+
+describe('isGroupable', () => {
+  it('accepts an ungrouped http(s) tab (groupId === -1 or null)', () => {
+    expect(isGroupable({ url: 'https://example.com', groupId: -1 })).toBe(true);
+    expect(isGroupable({ url: 'http://example.com' })).toBe(true);
+    expect(isGroupable({ url: 'https://example.com', groupId: undefined })).toBe(true);
+  });
+
+  it('rejects pinned tabs', () => {
+    expect(isGroupable({ url: 'https://example.com', pinned: true, groupId: -1 })).toBe(false);
+  });
+
+  it('rejects tabs already in a group (groupId >= 0)', () => {
+    expect(isGroupable({ url: 'https://example.com', groupId: 0 })).toBe(false);
+    expect(isGroupable({ url: 'https://example.com', groupId: 7 })).toBe(false);
+  });
+
+  it('rejects non-http(s) tabs', () => {
+    expect(isGroupable({ url: 'chrome://extensions', groupId: -1 })).toBe(false);
+    expect(isGroupable({ url: 'about:blank', groupId: -1 })).toBe(false);
+    expect(isGroupable({ url: undefined, groupId: -1 })).toBe(false);
   });
 });

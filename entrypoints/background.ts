@@ -1,4 +1,4 @@
-import { clusterTabs, type GroupColor, type TabLike } from '~/core/grouping/rules';
+import { clusterTabs, colorForKey, isGroupable, type GroupColor, type TabLike } from '~/core/grouping/rules';
 import { findDuplicates, type DedupeInput } from '~/core/dedupe';
 import { findNearDuplicateCandidates } from '~/core/dedupe-smart';
 import {
@@ -38,7 +38,19 @@ import {
 import { automation } from '~/core/storage/automation';
 import { activity, canUndo } from '~/core/storage/activity';
 import { learnedRules } from '~/core/automation/rules';
-import { classifyAndAct, scheduleClassification, cancelPending } from '~/core/automation/engine';
+import { instructions, type Instruction } from '~/core/storage/instructions';
+import {
+  activeClauses,
+  applyToClusters,
+  matchInstruction,
+} from '~/core/automation/instructions-apply';
+import { floorCompile } from '~/core/ai/instruction-schema';
+import {
+  classifyAndAct,
+  scheduleClassification,
+  cancelPending,
+  ensureCategoryWorkspace,
+} from '~/core/automation/engine';
 import { installAmbient, working, ambientError, notify, success } from '~/core/ambient';
 import { gemmaDownload } from '~/core/storage/ai-status';
 import { suggestionQueue } from '~/core/storage/suggestions';
@@ -48,6 +60,7 @@ import { freshnessStore, installDecaySweep, runDecaySweep } from '~/core/automat
 import { boomerang } from '~/core/automation/boomerang';
 import { classifyReading } from '~/core/automation/readingQueue';
 import { domainStats } from '~/core/digest/digest';
+import { onboardingState } from '~/core/storage/onboarding';
 
 export default defineBackground(() => {
   console.log('[tab-organizer] background loaded', { id: browser.runtime.id });
@@ -55,6 +68,18 @@ export default defineBackground(() => {
   // Ambient surfaces: toolbar badge + icon + tooltip + right-click menu.
   installAmbient((cmd) => handle(cmd));
   installProjectDetector();
+
+  // First-run: open the welcome/onboarding page once, on install only. Guarded
+  // by a persisted flag so an update or SW restart never reopens it.
+  chrome.runtime.onInstalled.addListener(async (details) => {
+    if (details.reason !== 'install') return;
+    try {
+      if (await onboardingState.isDone()) return;
+      await chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') });
+    } catch (e) {
+      console.warn('[tab-organizer] could not open onboarding', e);
+    }
+  });
 
   // Notify the user when the Backup engine finishes downloading.
   gemmaDownload.watch((p) => {
@@ -81,21 +106,36 @@ export default defineBackground(() => {
   });
 
   // ---- Unread surfacing: stamp every visit -------------------------------
-  chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.url && isHttp(tab.url)) {
-        await unreadIndex.touch(tab.url);
-        const cfg = await automation.get();
-        if (cfg.patternInsightsEnabled) {
-          await domainStats.record(tab.url);
+  // Debounced/coalesced: rapid Ctrl-Tab through many tabs would otherwise fire
+  // a whole-blob read-modify-write of the unread/freshness stores on every
+  // switch. Only stamp the tab the user actually settles on — which is also the
+  // semantically correct definition of "visited".
+  let activationTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingActivationTabId: number | undefined;
+  const ACTIVATION_DWELL_MS = 600;
+  const stampActivation = (tabId: number) => {
+    pendingActivationTabId = tabId;
+    if (activationTimer) clearTimeout(activationTimer);
+    activationTimer = setTimeout(async () => {
+      const id = pendingActivationTabId;
+      activationTimer = undefined;
+      if (id == null) return;
+      try {
+        const tab = await chrome.tabs.get(id);
+        if (tab.url && isHttp(tab.url)) {
+          await unreadIndex.touch(tab.url);
+          const cfg = await automation.get();
+          if (cfg.patternInsightsEnabled) {
+            await domainStats.record(tab.url);
+          }
         }
+        await freshnessStore.recordActivate(id);
+      } catch {
+        /* tab gone */
       }
-      await freshnessStore.recordActivate(tabId);
-    } catch {
-      /* tab gone */
-    }
-  });
+    }, ACTIVATION_DWELL_MS);
+  };
+  chrome.tabs.onActivated.addListener(({ tabId }) => stampActivation(tabId));
   chrome.tabs.onUpdated.addListener(async (tabId, change, tab) => {
     if (change.status === 'complete' && tab.url && isHttp(tab.url)) {
       await unreadIndex.touch(tab.url);
@@ -188,7 +228,10 @@ const LONG_RUNNING_COMMANDS = new Set([
   'exitFocus',
   'warmNanoDownload',
   'warmGemmaDownload',
-  'summarizeTab',
+  'addInstruction',
+  'updateInstruction',
+  'recompileInstruction',
+  'applyInstructionsNow',
 ]);
 
 async function handle(cmd: Command): Promise<unknown> {
@@ -229,8 +272,6 @@ async function dispatch(cmd: Command): Promise<unknown> {
       return offscreen.warmNano();
     case 'warmGemmaDownload':
       return offscreen.warmGemma();
-    case 'summarizeTab':
-      return summarizeTab(cmd.tabId);
     case 'startFocus':
       return startFocus(cmd.anchorTabId);
     case 'exitFocus':
@@ -338,6 +379,23 @@ async function dispatch(cmd: Command): Promise<unknown> {
       const queued = await runProjectDetection();
       return { queued };
     }
+    case 'listInstructions':
+      return instructions.list();
+    case 'addInstruction':
+      return addInstructionCmd(cmd.text);
+    case 'updateInstruction':
+      return updateInstructionCmd(cmd.id, cmd.patch);
+    case 'deleteInstruction':
+      await instructions.remove(cmd.id);
+      return { ok: true };
+    case 'recompileInstruction': {
+      const inst = await instructions.get(cmd.id);
+      if (!inst) throw new Error('instruction not found');
+      const updated = await compileInstructionInBg(cmd.id, inst.text);
+      return updated ?? inst;
+    }
+    case 'applyInstructionsNow':
+      return applyInstructionsNow();
     default: {
       const _exhaustive: never = cmd;
       throw new Error(`unknown command: ${JSON.stringify(_exhaustive)}`);
@@ -348,6 +406,15 @@ async function dispatch(cmd: Command): Promise<unknown> {
 async function pinWorkspace(workspaceId: string): Promise<Workspace> {
   const w = await workspaces.get(workspaceId);
   if (!w) throw new Error('workspace not found');
+  // Bookmark folder sync is a Pro feature. Pinning itself is free — for Free
+  // users we pin the workspace visually without mirroring it into a Chrome
+  // bookmark folder.
+  const ent = await getEntitlements();
+  if (!ent.features.bookmarkSync) {
+    const pinnedOnly = await workspaces.patch(workspaceId, { pinned: true });
+    if (!pinnedOnly) throw new Error('workspace patch failed');
+    return pinnedOnly;
+  }
   const folderId = await ensureWorkspaceFolder(w);
   await pushMembersToFolder(folderId, w.members);
   const updated = await workspaces.patch(workspaceId, {
@@ -413,6 +480,10 @@ const BULK_MIN_TABS = 3;
  * groups so a lone tab of its kind still gets grouped immediately.
  */
 async function autoGroupWindow(windowId: number): Promise<void> {
+  // Own the window for the whole pass (the onCreated listener also adds it, but
+  // be self-sufficient) so the per-tab classifier defers until we're done —
+  // including the workspace-persistence write below. Released in finally.
+  bulkWindows.add(windowId);
   try {
     const cfg = await automation.get();
     if (!cfg.enabled || cfg.group !== 'auto') return;
@@ -438,10 +509,11 @@ async function autoGroupWindow(windowId: number): Promise<void> {
     const jobId = `autoGroupWindow-${windowId}-${Date.now()}`;
     await working.begin(jobId);
     try {
-      const groups = clusterTabs(
-        eligible.map((t) => ({ id: t.id, url: t.url, title: t.title ?? '' })),
-      );
+      const tabLikes = eligible.map((t) => ({ id: t.id, url: t.url, title: t.title ?? '' }));
+      const clauses = activeClauses(await instructions.listEnabled());
+      const groups = applyToClusters(clusterTabs(tabLikes), clauses, tabLikes);
       const applied: Array<{ name: string; tabIds: number[] }> = [];
+      const toPersist: PersistGroup[] = [];
       for (const g of groups) {
         const live = g.tabIds.filter((id) => eligible.some((t) => t.id === id));
         if (live.length === 0) continue;
@@ -452,10 +524,24 @@ async function autoGroupWindow(windowId: number): Promise<void> {
           })) as number;
           await chrome.tabGroups.update(groupId, { title: g.label, color: g.color });
           applied.push({ name: g.label, tabIds: live });
+          toPersist.push({
+            label: g.label,
+            color: g.color,
+            members: live
+              .map((id) => eligible.find((t) => t.id === id))
+              .filter((t): t is (typeof eligible)[number] => t != null)
+              .map((t) => ({
+                tabId: t.id,
+                url: t.url,
+                title: t.title ?? '',
+                favIconUrl: t.favIconUrl,
+              })),
+          });
         } catch (err) {
           console.warn('[tab-organizer] autoGroupWindow: failed to apply group', g.label, err);
         }
       }
+      await persistGroupsAsWorkspaces(toPersist);
       if (applied.length > 0) {
         const tabsGrouped = applied.reduce((n, g) => n + g.tabIds.length, 0);
         await activity.add({ type: 'manual-group-batch', tier: 'rule', groups: applied }, 60_000);
@@ -528,6 +614,54 @@ async function applyTabToWorkspace(workspaceId: string, tabId: number): Promise<
   }
 }
 
+interface PersistGroup {
+  label: string;
+  color: GroupColor;
+  members: Array<{ tabId: number; url: string; title: string; favIconUrl?: string }>;
+}
+
+/**
+ * Persist groups created by a bulk pass (groupNow / autoGroupWindow) as
+ * workspaces, so the per-tab classifier later recognizes them instead of
+ * spawning a duplicate category workspace for the same tabs. Find-or-creates a
+ * workspace by group name (via `ensureCategoryWorkspace`) and sets its live
+ * members.
+ *
+ * Unlike `applyTabToWorkspace`, this does NOT call `chrome.tabs.group` — the
+ * Chrome tab groups were already created by the caller; here we only sync
+ * storage. Best-effort: a storage failure must not undo the grouping.
+ */
+async function persistGroupsAsWorkspaces(applied: PersistGroup[]): Promise<void> {
+  for (const g of applied) {
+    if (g.members.length === 0) continue;
+    try {
+      const workspaceId = await ensureCategoryWorkspace({ name: g.label, color: g.color });
+      const w = await workspaces.get(workspaceId);
+      if (!w) continue;
+      const incoming = g.members.map((m) => ({
+        kind: 'live' as const,
+        tabId: m.tabId,
+        url: m.url,
+        title: m.title || m.url,
+        favIconUrl: m.favIconUrl,
+      }));
+      const incomingTabIds = new Set(incoming.map((m) => m.tabId));
+      const incomingUrls = new Set(incoming.map((m) => m.url));
+      // Drop stale live dupes (same tabId or url), then append the fresh set.
+      const kept = w.members.filter(
+        (m) => !(m.kind === 'live' && (incomingTabIds.has(m.tabId) || incomingUrls.has(m.url))),
+      );
+      const next = [...kept, ...incoming];
+      await workspaces.patch(workspaceId, { members: next, lastUsedAt: Date.now() });
+      if (w.pinned && w.bookmarkFolderId) {
+        await pushMembersToFolder(w.bookmarkFolderId, next);
+      }
+    } catch (err) {
+      console.warn('[tab-organizer] persistGroupsAsWorkspaces failed for', g.label, err);
+    }
+  }
+}
+
 async function undoActivity(entryId: string): Promise<{ ok: true }> {
   const all = await activity.list();
   const entry = all.find((e) => e.id === entryId);
@@ -587,6 +721,30 @@ async function undoActivity(entryId: string): Promise<{ ok: true }> {
             console.warn('[tab-organizer] ungroup failed', err);
           }
         }
+      }
+      // Unwind the workspace members this batch persisted, so undo fully
+      // reverses the organize. Only ever touch *auto* workspaces — never the
+      // user's manual/imported/focus spaces, even when a batch group name
+      // happens to collide with one. Remove the batch's tabIds; delete a
+      // workspace only if nothing remains (bookmark/archived members survive
+      // because the filter keeps them, so next.length stays > 0).
+      try {
+        const batchTabIds = new Set(entry.action.groups.flatMap((g) => g.tabIds));
+        const names = new Set(entry.action.groups.map((g) => g.name));
+        for (const w of await workspaces.list()) {
+          if (w.kind !== 'auto' || !names.has(w.name)) continue;
+          const next = w.members.filter(
+            (m) => !(m.kind === 'live' && batchTabIds.has(m.tabId)),
+          );
+          if (next.length === w.members.length) continue; // nothing of ours here
+          if (next.length === 0) {
+            await workspaces.remove(w.id);
+          } else {
+            await workspaces.patch(w.id, { members: next });
+          }
+        }
+      } catch (err) {
+        console.warn('[tab-organizer] manual-group-batch member unwind failed', err);
       }
       break;
     }
@@ -659,7 +817,7 @@ function isHttp(url: string): boolean {
   return url.startsWith('http://') || url.startsWith('https://');
 }
 
-async function getCurrentWindowTabs(): Promise<{
+async function getCurrentWindowTabs(opts?: { groupable?: boolean }): Promise<{
   windowId: number;
   tabs: Array<chrome.tabs.Tab & { id: number; url: string }>;
 }> {
@@ -673,9 +831,14 @@ async function getCurrentWindowTabs(): Promise<{
   if (typeof windowId !== 'number') {
     throw new Error('no focused window with tabs (open at least one normal tab)');
   }
+  // `groupable` (manual organize) excludes pinned, non-http and already-grouped
+  // tabs so the button never re-grabs and re-clusters groups the user already
+  // has. The default (used by dedupe) keeps the broader !pinned set.
   const tabs = allTabs.filter(
     (t): t is chrome.tabs.Tab & { id: number; url: string } =>
-      typeof t.id === 'number' && typeof t.url === 'string' && !t.pinned,
+      typeof t.id === 'number' &&
+      typeof t.url === 'string' &&
+      (opts?.groupable ? isGroupable(t) : !t.pinned),
   );
   console.log('[tab-organizer] queried current window', { windowId, tabCount: tabs.length });
   return { windowId, tabs };
@@ -698,96 +861,291 @@ async function getAiStatus() {
 // ----- commands ------------------------------------------------------------
 
 async function groupNow(): Promise<{ groupsCreated: number; tabsGrouped: number; tier: AiTier }> {
-  const { windowId, tabs } = await getCurrentWindowTabs();
+  const { windowId, tabs } = await getCurrentWindowTabs({ groupable: true });
   if (tabs.length === 0) throw new Error('no eligible tabs in this window');
 
-  const tabLikes: TabLike[] = tabs.map((t) => ({ id: t.id, url: t.url, title: t.title ?? '' }));
-  const status = await getAiStatus();
-  const tier = pickTier({ languageModel: status.languageModel, gemma: status.gemma });
+  // Own the window for the duration so the debounced per-tab classifier
+  // (maybeClassifyTab) doesn't race this bulk pass and double-group tabs.
+  bulkWindows.add(windowId);
+  try {
+    const tabLikes: TabLike[] = tabs.map((t) => ({ id: t.id, url: t.url, title: t.title ?? '' }));
+    const enabledInstructions = await instructions.listEnabled();
+    const clauses = activeClauses(enabledInstructions);
+    const userRules = enabledInstructions.map((i) => i.text);
+    const status = await getAiStatus();
+    const tier = pickTier({ languageModel: status.languageModel, gemma: status.gemma });
 
-  // Gate Tier-2 (Gemma) on monthly quota for Free users. Nano + rules are
-  // always allowed because they cost nothing.
-  let effectiveTier = tier;
-  if (tier === 'gemma') {
-    const gate = await gateGemmaCall();
-    if (!gate.allowed) {
-      console.log('[tab-organizer] Gemma quota exhausted; falling back to rules', gate);
-      effectiveTier = 'rule';
+    // Gate Tier-2 (Gemma) on monthly quota for Free users. Nano + rules are
+    // always allowed because they cost nothing.
+    let effectiveTier = tier;
+    if (tier === 'gemma') {
+      const gate = await gateGemmaCall();
+      if (!gate.allowed) {
+        console.log('[tab-organizer] Gemma quota exhausted; falling back to rules', gate);
+        effectiveTier = 'rule';
+      }
     }
-  }
 
-  let groups;
-  if (effectiveTier === 'nano' || effectiveTier === 'gemma') {
-    try {
-      const s = await settings.get();
-      const ai = await offscreen.semanticGroup(
-        effectiveTier,
-        tabLikes.map((t) => ({ id: t.id, title: t.title, url: t.url })),
-        s.preset,
-        s.embedderOnGpu,
-      );
-      groups = mergeSemanticAndRules(ai.clusters, tabLikes, effectiveTier);
-      if (effectiveTier === 'gemma') await recordGemmaCall();
-    } catch (err) {
-      console.warn(`[tab-organizer] ${effectiveTier} semantic group failed, falling back to rules`, err);
+    let groups;
+    if (effectiveTier === 'nano' || effectiveTier === 'gemma') {
+      try {
+        const s = await settings.get();
+        const ai = await offscreen.semanticGroup(
+          effectiveTier,
+          tabLikes.map((t) => ({ id: t.id, title: t.title, url: t.url })),
+          s.preset,
+          s.embedderOnGpu,
+          userRules,
+        );
+        groups = mergeSemanticAndRules(ai.clusters, tabLikes, effectiveTier);
+        if (effectiveTier === 'gemma') await recordGemmaCall();
+      } catch (err) {
+        console.warn(`[tab-organizer] ${effectiveTier} semantic group failed, falling back to rules`, err);
+        groups = clusterTabs(tabLikes);
+      }
+    } else {
       groups = clusterTabs(tabLikes);
     }
-  } else {
-    groups = clusterTabs(tabLikes);
-  }
 
-  groups = groups.filter((g) => g.tabIds.length >= 2);
+    // Enforce Custom Rules deterministically across every tier (the prompt block
+    // is only soft steering; this is the guarantee).
+    groups = applyToClusters(groups, clauses, tabLikes);
 
-  let groupsCreated = 0;
-  let tabsGrouped = 0;
-  const appliedGroups: Array<{ name: string; tabIds: number[] }> = [];
+    // Keep singleton groups so every eligible tab lands somewhere, matching the
+    // per-tab auto path. Empty groups are still skipped at apply time below.
 
-  for (const g of groups) {
-    try {
-      const groupId = (await chrome.tabs.group({
-        tabIds: g.tabIds as [number, ...number[]],
-        createProperties: { windowId },
-      })) as number;
-      await chrome.tabGroups.update(groupId, {
-        title: g.label,
-        color: g.color as GroupColor,
-      });
-      groupsCreated += 1;
-      tabsGrouped += g.tabIds.length;
-      appliedGroups.push({ name: g.label, tabIds: [...g.tabIds] });
-    } catch (err) {
-      console.warn('[tab-organizer] failed to apply group', g, err);
+    let groupsCreated = 0;
+    let tabsGrouped = 0;
+    const appliedGroups: Array<{ name: string; tabIds: number[] }> = [];
+    const toPersist: PersistGroup[] = [];
+
+    for (const g of groups) {
+      if (g.tabIds.length === 0) continue;
+      try {
+        const groupId = (await chrome.tabs.group({
+          tabIds: g.tabIds as [number, ...number[]],
+          createProperties: { windowId },
+        })) as number;
+        await chrome.tabGroups.update(groupId, {
+          title: g.label,
+          color: g.color as GroupColor,
+        });
+        groupsCreated += 1;
+        tabsGrouped += g.tabIds.length;
+        appliedGroups.push({ name: g.label, tabIds: [...g.tabIds] });
+        // Persist only deterministic rule/category groups: their labels equal
+        // the per-tab path's `bucketFor` output, so the classifier finds and
+        // maintains them by name. AI clusters carry free-form labels (e.g.
+        // "🐙 GitHub work", keyed "nano:"/"gemma:") the per-tab path can't match
+        // by name — persisting them would spawn duplicate category workspaces.
+        // Leave AI clusters Chrome-only, exactly as before persistence existed.
+        if (!g.key.startsWith('nano:') && !g.key.startsWith('gemma:')) {
+          toPersist.push({
+            label: g.label,
+            color: g.color as GroupColor,
+            members: g.tabIds
+              .map((id) => tabs.find((t) => t.id === id))
+              .filter((t): t is (typeof tabs)[number] => t != null)
+              .map((t) => ({
+                tabId: t.id,
+                url: t.url,
+                title: t.title ?? '',
+                favIconUrl: t.favIconUrl,
+              })),
+          });
+        }
+      } catch (err) {
+        console.warn('[tab-organizer] failed to apply group', g, err);
+      }
     }
-  }
 
-  // Record an undoable batch so the user can revert the whole organize action.
-  if (appliedGroups.length > 0) {
-    await activity.add(
-      { type: 'manual-group-batch', tier: effectiveTier, groups: appliedGroups },
-      60_000,
-    );
-    await success.flash(
-      groupsCreated === 1
-        ? `Created 1 space (${tabsGrouped} tabs)`
-        : `Created ${groupsCreated} spaces (${tabsGrouped} tabs)`,
-    );
-    void notify({
-      event: 'auto-grouped-batch',
-      title: 'Window organized',
-      message:
+    // Persist the groups as workspaces so the per-tab classifier maintains them
+    // instead of spawning duplicate category groups for the same tabs.
+    await persistGroupsAsWorkspaces(toPersist);
+
+    // Record an undoable batch so the user can revert the whole organize action.
+    if (appliedGroups.length > 0) {
+      await activity.add(
+        { type: 'manual-group-batch', tier: effectiveTier, groups: appliedGroups },
+        60_000,
+      );
+      await success.flash(
         groupsCreated === 1
-          ? `1 space · ${tabsGrouped} tabs · ${effectiveTier}`
-          : `${groupsCreated} spaces · ${tabsGrouped} tabs · ${effectiveTier}`,
+          ? `Created 1 space (${tabsGrouped} tabs)`
+          : `Created ${groupsCreated} spaces (${tabsGrouped} tabs)`,
+      );
+      void notify({
+        event: 'auto-grouped-batch',
+        title: 'Window organized',
+        message:
+          groupsCreated === 1
+            ? `1 space · ${tabsGrouped} tabs · ${effectiveTier}`
+            : `${groupsCreated} spaces · ${tabsGrouped} tabs · ${effectiveTier}`,
+      });
+    }
+
+    console.log('[tab-organizer] groupNow done', {
+      tier: effectiveTier,
+      groupsCreated,
+      tabsGrouped,
+      inputTabs: tabs.length,
     });
+    return { groupsCreated, tabsGrouped, tier: effectiveTier };
+  } finally {
+    bulkWindows.delete(windowId);
+  }
+}
+
+// ----- custom rules --------------------------------------------------------
+
+/** Compile a rule on-device (offscreen Nano → floor fallback) and persist the
+ *  result. Best-effort: a background-side failure still floor-compiles. */
+async function compileInstructionInBg(id: string, text: string): Promise<Instruction | null> {
+  let clauses;
+  let by: 'nano' | 'floor';
+  try {
+    const res = await offscreen.compileInstruction(text);
+    clauses = res.clauses;
+    by = res.by;
+  } catch (err) {
+    console.warn('[tab-organizer] compile via offscreen failed; using floor', err);
+    clauses = floorCompile(text);
+    by = 'floor';
+  }
+  const updated = await instructions.patch(id, { compiled: clauses, compiledBy: by });
+  return updated ?? null;
+}
+
+async function addInstructionCmd(text: string): Promise<Instruction> {
+  if (!text.trim()) throw new Error('rule text is empty');
+  const inst = await instructions.add(text);
+  const compiled = await compileInstructionInBg(inst.id, inst.text);
+  try {
+    await applyInstructionsNow();
+  } catch (err) {
+    console.warn('[tab-organizer] re-apply after addInstruction failed', err);
+  }
+  return compiled ?? inst;
+}
+
+async function updateInstructionCmd(
+  id: string,
+  patch: { text?: string; enabled?: boolean },
+): Promise<Instruction> {
+  const existing = await instructions.get(id);
+  if (!existing) throw new Error('instruction not found');
+  const nextText = typeof patch.text === 'string' ? patch.text.trim() : undefined;
+  const textChanged = nextText != null && nextText !== existing.text;
+  let updated = await instructions.patch(id, {
+    ...(nextText != null ? { text: nextText } : {}),
+    ...(typeof patch.enabled === 'boolean' ? { enabled: patch.enabled } : {}),
+    ...(textChanged ? { compiled: undefined, compiledBy: 'pending' as const } : {}),
+  });
+  if (!updated) throw new Error('instruction not found');
+  if (textChanged) {
+    updated = (await compileInstructionInBg(id, updated.text)) ?? updated;
+  }
+  try {
+    await applyInstructionsNow();
+  } catch (err) {
+    console.warn('[tab-organizer] re-apply after updateInstruction failed', err);
+  }
+  return updated;
+}
+
+/**
+ * Apply enabled Custom Rules to the tabs already open in the current window —
+ * the "re-organize immediately" behavior. Unlike `groupNow`, this is targeted:
+ * it only touches tabs a rule matches (moving them, even out of an existing
+ * group), leaving every other tab where it is. Records an undoable batch.
+ */
+async function applyInstructionsNow(): Promise<{
+  groupsCreated: number;
+  tabsGrouped: number;
+  tier: AiTier;
+}> {
+  const enabled = await instructions.listEnabled();
+  const clauses = activeClauses(enabled);
+  if (clauses.length === 0) return { groupsCreated: 0, tabsGrouped: 0, tier: 'rule' };
+
+  let windowId: number;
+  let tabs: Array<chrome.tabs.Tab & { id: number; url: string }>;
+  try {
+    const cur = await getCurrentWindowTabs();
+    windowId = cur.windowId;
+    tabs = cur.tabs;
+  } catch {
+    return { groupsCreated: 0, tabsGrouped: 0, tier: 'rule' };
   }
 
-  console.log('[tab-organizer] groupNow done', {
-    tier: effectiveTier,
-    groupsCreated,
-    tabsGrouped,
-    inputTabs: tabs.length,
-  });
-  return { groupsCreated, tabsGrouped, tier: effectiveTier };
+  bulkWindows.add(windowId);
+  try {
+    const byTarget = new Map<string, number[]>();
+    const toUngroup: number[] = [];
+    const renames: Array<{ tabId: number; label: string }> = [];
+
+    for (const t of tabs) {
+      if (!isHttp(t.url)) continue;
+      const c = matchInstruction({ url: t.url, title: t.title ?? '' }, clauses);
+      if (!c) continue;
+      if (c.kind === 'never') {
+        toUngroup.push(t.id);
+      } else if (c.kind === 'assign' || c.kind === 'merge') {
+        const target = c.target;
+        if (!target) continue; // targetless merge: left to bulk Organize
+        const arr = byTarget.get(target) ?? [];
+        arr.push(t.id);
+        byTarget.set(target, arr);
+      } else if (c.kind === 'rename') {
+        renames.push({ tabId: t.id, label: c.target });
+      }
+    }
+
+    if (toUngroup.length > 0) {
+      try {
+        await chrome.tabs.ungroup(toUngroup as [number, ...number[]]);
+      } catch (err) {
+        console.warn('[tab-organizer] applyInstructionsNow ungroup failed', err);
+      }
+    }
+
+    const applied: Array<{ name: string; tabIds: number[] }> = [];
+    for (const [name, ids] of byTarget) {
+      try {
+        const wsId = await ensureCategoryWorkspace({ name, color: colorForKey(name) });
+        for (const id of ids) await applyTabToWorkspace(wsId, id);
+        applied.push({ name, tabIds: ids });
+      } catch (err) {
+        console.warn('[tab-organizer] applyInstructionsNow assign failed for', name, err);
+      }
+    }
+
+    const renamedGroups = new Set<number>();
+    for (const { tabId, label } of renames) {
+      try {
+        const t = await chrome.tabs.get(tabId);
+        if (typeof t.groupId === 'number' && t.groupId !== -1 && !renamedGroups.has(t.groupId)) {
+          await chrome.tabGroups.update(t.groupId, { title: label });
+          renamedGroups.add(t.groupId);
+        }
+      } catch {
+        /* tab/group gone */
+      }
+    }
+
+    const tabsGrouped = applied.reduce((n, g) => n + g.tabIds.length, 0);
+    if (applied.length > 0) {
+      await activity.add({ type: 'manual-group-batch', tier: 'rule', groups: applied }, 60_000);
+      await success.flash(
+        applied.length === 1
+          ? `Applied rule · ${tabsGrouped} tab${tabsGrouped === 1 ? '' : 's'}`
+          : `Applied rules · ${applied.length} groups · ${tabsGrouped} tabs`,
+      );
+    }
+    return { groupsCreated: applied.length, tabsGrouped, tier: 'rule' };
+  } finally {
+    bulkWindows.delete(windowId);
+  }
 }
 
 async function dedupe(): Promise<{ closed: number }> {
@@ -985,21 +1343,6 @@ async function restoreSession(sessionId: string): Promise<{ restored: number }> 
   }
 
   return { restored: session.tabs.length };
-}
-
-async function summarizeTab(tabId: number): Promise<{ summary: string }> {
-  const tab = await chrome.tabs.get(tabId);
-  if (!tab.url) throw new Error('tab has no URL');
-
-  const [{ result } = { result: '' }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => document.body?.innerText?.slice(0, 6000) ?? '',
-  });
-
-  const text = typeof result === 'string' ? result : '';
-  if (!text) throw new Error('could not read tab text');
-
-  return offscreen.summarize(tab.url, text);
 }
 
 // ----- focus mode ----------------------------------------------------------

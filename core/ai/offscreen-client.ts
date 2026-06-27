@@ -10,6 +10,7 @@ import {
   type AvailabilityResult,
   type ClassifyAgainstAnchorResult,
   type ClusterCandidate,
+  type CompileInstructionResult,
   type DedupeCandidate,
   type OffscreenEnvelope,
   type RecapResult,
@@ -58,6 +59,7 @@ export const offscreen = {
     tabs: ClusterCandidate[],
     preset: 'fast' | 'balanced' | 'thorough',
     embedderOnGpu: boolean,
+    userRules: string[] = [],
   ) =>
     send<SemanticGroupResult>({
       kind: 'semanticGroup',
@@ -65,7 +67,10 @@ export const offscreen = {
       tabs,
       preset,
       embedderOnGpu,
+      userRules,
     }),
+  compileInstruction: (text: string) =>
+    send<CompileInstructionResult>({ kind: 'compileInstruction', text }),
   smartDedupe: (pairs: Array<[DedupeCandidate, DedupeCandidate]>) =>
     send<SmartDedupeResult>({ kind: 'smartDedupe', pairs }),
   summarize: (url: string, text: string) =>

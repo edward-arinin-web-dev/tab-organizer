@@ -64,9 +64,12 @@ Examples of BAD clusters (do not produce):
 - {label: "Rust Skins", tabIds: [rust-skin-site-a, rust-skin-site-b, youtube-rust-gameplay]} — video belongs in its own cluster
 - {label: "AI Development", tabIds: [claude-docs, gpt-pricing, mcp-spec, ai-news, ai-tweet]} — mixes refs + news + social; split into smaller specific clusters`;
 
-export function buildSemanticGroupPrompt(tabs: ClusterCandidate[]): string {
+export function buildSemanticGroupPrompt(
+  tabs: ClusterCandidate[],
+  userRulesBlock = '',
+): string {
   const lines = tabs.map((t) => `${t.id}\t${truncate(t.title, 80)}\t${truncate(t.url, 120)}`);
-  return `Group these tabs. Columns: id, title, url.\n\n${lines.join('\n')}`;
+  return `Group these tabs. Columns: id, title, url.\n\n${lines.join('\n')}${userRulesBlock}`;
 }
 
 function truncate(s: string, n: number): string {

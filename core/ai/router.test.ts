@@ -85,11 +85,46 @@ describe('mergeSemanticAndRules', () => {
     expect(hn?.tabIds.sort()).toEqual([5, 6]);
   });
 
+  it('does NOT attach a leftover tab when its domain is a lone member of the cluster', () => {
+    // The graft bug: a heterogeneous cluster holds a single youtube.com tab, so
+    // every other stray youtube.com tab in the window used to get sucked in.
+    // With ATTACH_MIN_DOMAIN_TABS=2 the single-pole domain can't absorb it.
+    const tabs: TabLike[] = [
+      { id: 1, url: 'https://zillow.com/a', title: '' },
+      { id: 2, url: 'https://redfin.com/b', title: '' },
+      { id: 3, url: 'https://youtube.com/watch?v=1', title: 'vid one' },
+      { id: 4, url: 'https://youtube.com/watch?v=2', title: 'vid two' }, // leftover
+    ];
+    const groups = mergeSemanticAndRules(
+      [{ label: 'Home Hunt', emoji: '🏠', tabIds: [1, 2, 3], confidence: 0.9 }],
+      tabs,
+    );
+    const cluster = groups.find((g) => g.key === 'nano:Home Hunt');
+    expect(cluster?.tabIds.sort()).toEqual([1, 2, 3]);
+    expect(cluster?.tabIds).not.toContain(4);
+    // The stray video instead falls to the rule floor under the Video category.
+    const video = groups.find((g) => g.key === 'cat:video');
+    expect(video?.tabIds).toEqual([4]);
+  });
+
+  it('attaches a leftover tab when its domain is a multi-tab member of the cluster', () => {
+    const tabs: TabLike[] = [
+      { id: 1, url: 'https://example.com/a', title: '' },
+      { id: 2, url: 'https://example.com/b', title: '' },
+      { id: 3, url: 'https://example.com/c-missed', title: '' }, // leftover
+    ];
+    const groups = mergeSemanticAndRules(
+      [{ label: 'Example', emoji: '📒', tabIds: [1, 2], confidence: 0.9 }],
+      tabs,
+    );
+    // example.com has 2 members in the cluster → the missed 3rd attaches.
+    expect(groups.find((g) => g.key === 'nano:Example')?.tabIds.sort()).toEqual([1, 2, 3]);
+  });
+
   it('ejects a YouTube singleton from a cluster dominated by skin sites', () => {
     // The "Rust skins" failure mode: 4 rustskin.com tabs + 1 youtube.com tab
     // that the AI lumped together. After ejection, YouTube falls back to
-    // rule grouping (singleton → dropped from filter), and the skin cluster
-    // stays clean.
+    // rule grouping and the skin cluster stays clean.
     const tabs: TabLike[] = [
       { id: 1, url: 'https://rustskin.com/a', title: '' },
       { id: 2, url: 'https://rustskin.com/b', title: '' },
@@ -103,8 +138,8 @@ describe('mergeSemanticAndRules', () => {
     );
     const skins = groups.find((g) => g.key === 'nano:Rust Skins');
     expect(skins?.tabIds.sort()).toEqual([1, 2, 3, 4]);
-    // YouTube ejected; lands in rule group "youtube.com" (singleton — but the
-    // filter at chrome.tabs.group time drops <2 groups, which is correct).
+    // YouTube ejected from the AI cluster; it lands in the rule floor instead
+    // (groupNow now keeps singleton groups so the stray tab still gets a home).
     expect(skins?.tabIds).not.toContain(5);
   });
 

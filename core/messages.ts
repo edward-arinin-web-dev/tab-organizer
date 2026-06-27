@@ -13,6 +13,7 @@ import type { ProposedWorkspace } from './bookmarks/import';
 import type { AutomationSettings } from './storage/automation';
 import type { ActivityEntry } from './storage/activity';
 import type { LearnedRule } from './automation/rules';
+import type { Instruction } from './storage/instructions';
 import type { Suggestion } from './storage/suggestions';
 
 export type Command =
@@ -25,7 +26,6 @@ export type Command =
   | { type: 'getAiStatus' }
   | { type: 'warmNanoDownload' }
   | { type: 'warmGemmaDownload' }
-  | { type: 'summarizeTab'; tabId: number }
   | { type: 'startFocus'; anchorTabId: number }
   | { type: 'exitFocus' }
   | { type: 'getFocusState' }
@@ -51,6 +51,12 @@ export type Command =
   | { type: 'undoActivity'; entryId: string }
   | { type: 'listLearnedRules' }
   | { type: 'deleteLearnedRule'; key: string }
+  | { type: 'listInstructions' }
+  | { type: 'addInstruction'; text: string }
+  | { type: 'updateInstruction'; id: string; patch: { text?: string; enabled?: boolean } }
+  | { type: 'deleteInstruction'; id: string }
+  | { type: 'recompileInstruction'; id: string }
+  | { type: 'applyInstructionsNow' }
   | { type: 'acceptSuggestion'; tabId: number; workspaceId: string; pattern: string }
   | { type: 'rejectSuggestion'; tabId: number; workspaceId: string; pattern: string }
   | { type: 'listQueuedSuggestions' }
@@ -86,10 +92,6 @@ export interface AiStatusResult {
   webGpu: boolean;
 }
 
-export interface SummarizeTabResult {
-  summary: string;
-}
-
 export interface FocusStartResult {
   deferred: number;
   sessionId: string;
@@ -123,9 +125,7 @@ export type CommandResponse<C extends Command = Command> = C extends { type: 'gr
                 ? { state: AiAvailabilityState }
                 : C extends { type: 'warmGemmaDownload' }
                   ? { state: AiAvailabilityState }
-                  : C extends { type: 'summarizeTab' }
-                    ? SummarizeTabResult
-                    : C extends { type: 'startFocus' }
+                  : C extends { type: 'startFocus' }
                       ? FocusStartResult
                       : C extends { type: 'exitFocus' }
                         ? { restored: number }
@@ -187,7 +187,19 @@ export type CommandResponse<C extends Command = Command> = C extends { type: 'gr
                                                                                 ? { ok: true }
                                                                                 : C extends { type: 'runProjectDetection' }
                                                                                   ? { queued: number }
-                                                                                  : never;
+                                                                                  : C extends { type: 'listInstructions' }
+                                                                                    ? Instruction[]
+                                                                                    : C extends { type: 'addInstruction' }
+                                                                                      ? Instruction
+                                                                                      : C extends { type: 'updateInstruction' }
+                                                                                        ? Instruction
+                                                                                        : C extends { type: 'deleteInstruction' }
+                                                                                          ? { ok: true }
+                                                                                          : C extends { type: 'recompileInstruction' }
+                                                                                            ? Instruction
+                                                                                            : C extends { type: 'applyInstructionsNow' }
+                                                                                              ? GroupNowResult
+                                                                                              : never;
 
 export type Envelope =
   | { ok: true; data: unknown }

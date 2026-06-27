@@ -59,6 +59,19 @@ export async function verifyLicenseKey(key: string): Promise<LifetimePayload> {
     throw new LicenseVerifyError('license key has invalid base64url segments', 'malformed');
   }
 
+  // Security guard: never verify against the all-zero placeholder public key.
+  // A real build MUST substitute a genuine key via VITE_LICENSE_PUB_KEY; if it
+  // didn't, falling back to the placeholder would risk a spoofable paywall. The
+  // placeholder is a degenerate key that can't validate any real signature, so
+  // failing closed here loses nothing legitimate. For local lifetime testing,
+  // set VITE_LICENSE_PUB_KEY to a real dev public key.
+  if (LICENSE_PUBLIC_KEY_B64 === DEV_PUBLIC_KEY_B64) {
+    throw new LicenseVerifyError(
+      'license verification is not configured in this build',
+      'signature',
+    );
+  }
+
   const publicKey = await importEd25519PublicKey(LICENSE_PUBLIC_KEY_B64);
   let ok = false;
   try {

@@ -25,6 +25,8 @@ import {
 } from '~/core/storage/workspaces';
 import { classifyTab } from './classifier';
 import { learnedRules } from './rules';
+import { instructions } from '~/core/storage/instructions';
+import { activeClauses, matchInstruction, type ActionableClause } from './instructions-apply';
 import { activity } from '~/core/storage/activity';
 import { suggestionQueue } from '~/core/storage/suggestions';
 import { thinking, success, notify } from '~/core/ambient';
@@ -33,7 +35,10 @@ import { categorize } from '~/core/grouping/categories';
 import { colorForKey, type GroupColor } from '~/core/grouping/rules';
 import { parse } from 'tldts';
 
-const INSTALL_BLACKOUT_MS = 3_000;
+// Honor the documented contract above: never act in the first 60s after
+// install (research/PAIN.md §5). Previously 3_000, which contradicted the spec
+// and risked surprise auto-grouping seconds after install — a bad first run.
+const INSTALL_BLACKOUT_MS = 60_000;
 const DEBOUNCE_MS = 800;
 
 interface PendingClassification {
@@ -117,6 +122,7 @@ export function decide(
   workspacesList: ReadonlyArray<Workspace>,
   settings: AutomationSettings,
   learnedAutoRule?: { workspaceId: string },
+  instructionMatch?: ActionableClause,
 ): ClassifyDecision {
   const pattern = patternFor(tab.url);
   if (!settings.enabled) {
@@ -124,6 +130,28 @@ export function decide(
   }
   if (settings.group === 'manual') {
     return { action: 'skip', confidence: 0, pattern, reason: 'group=manual' };
+  }
+
+  // A user-authored Custom Rule outranks everything below. Only auto mode acts
+  // on its own (mirrors the category-bucket branch); assist/manual defer to the
+  // next manual organize.
+  if (instructionMatch && settings.group === 'auto') {
+    if (instructionMatch.kind === 'never') {
+      return { action: 'skip', confidence: 1, pattern, reason: 'custom rule: never group' };
+    }
+    const target =
+      instructionMatch.kind === 'assign' || instructionMatch.kind === 'merge'
+        ? instructionMatch.target
+        : undefined;
+    if (target) {
+      return {
+        action: 'auto',
+        newGroup: { name: target, color: colorForKey(target) },
+        confidence: 1,
+        pattern,
+        reason: 'custom rule',
+      };
+    }
   }
 
   // Hard learned rule wins. Confidence = 1.
@@ -241,18 +269,24 @@ export async function classifyAndAct(
   if (!tab.url || !isHttp(tab.url) || typeof tab.id !== 'number') {
     return { action: 'skip', confidence: 0, pattern: '', reason: 'not http tab' };
   }
-  const [settings, list, learned] = await Promise.all([
+  const [settings, list, learned, enabledInstructions] = await Promise.all([
     automation.get(),
     workspaces.list(),
     learnedRules.lookup(patternFor(tab.url)),
+    instructions.listEnabled(),
   ]);
   const learnedAuto =
     learned && learned.status === 'auto' ? { workspaceId: learned.workspaceId } : undefined;
+  const instructionMatch = matchInstruction(
+    { url: tab.url, title: tab.title ?? '' },
+    activeClauses(enabledInstructions),
+  );
   const decision = decide(
     { url: tab.url, title: tab.title ?? '' },
     list,
     settings,
     learnedAuto,
+    instructionMatch,
   );
 
   // Surface "thinking" while we work — pulsing icon.

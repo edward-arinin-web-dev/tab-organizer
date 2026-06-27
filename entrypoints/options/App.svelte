@@ -10,7 +10,8 @@
   import { DEFAULT_AUTOMATION, type AutomationSettings, type Aggressiveness } from '~/core/storage/automation';
   import type { Entitlements, LicenseState } from '~/core/license/types';
   import type { ProposedWorkspace } from '~/core/bookmarks/import';
-  import { Dot, AutoSlider } from '~/ui';
+  import { Dot, AutoSlider, InstructionEditor, InstructionList } from '~/ui';
+  import { instructions, type Instruction } from '~/core/storage/instructions';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
   let ai = $state<AiStatusResult>({
@@ -38,6 +39,9 @@
   let importProposals = $state<ProposedWorkspace[]>([]);
   let confirmClear = $state(false);
 
+  let instructionsList = $state<Instruction[]>([]);
+  let rulesStatus = $state('');
+
   onMount(() => {
     void refresh();
     void sendCommand({ type: 'getSettings' }).then((s) => (prefs = s));
@@ -46,6 +50,7 @@
     void sendCommand({ type: 'getLicenseState' }).then((l) => (license = l));
     void nanoDownload.get().then((p) => (nanoProg = p));
     void gemmaDownload.get().then((p) => (gemmaProg = p));
+    void instructions.list().then((i) => (instructionsList = i));
     const u1 = nanoDownload.watch((p) => {
       nanoProg = p;
       if (p?.state === 'done') void refresh();
@@ -54,11 +59,48 @@
       gemmaProg = p;
       if (p?.state === 'done') void refresh();
     });
+    const u3 = instructions.watch((i) => (instructionsList = i));
     return () => {
       u1();
       u2();
+      u3();
     };
   });
+
+  // ---- Custom Rules handlers ----------------------------------------------
+  async function addInstruction(text: string) {
+    rulesStatus = 'Adding & applying…';
+    try {
+      await sendCommand({ type: 'addInstruction', text });
+      rulesStatus = 'Rule added.';
+    } catch (err) {
+      rulesStatus = err instanceof Error ? err.message : String(err);
+    }
+  }
+  async function toggleInstruction(id: string, enabled: boolean) {
+    await sendCommand({ type: 'updateInstruction', id, patch: { enabled } });
+  }
+  async function saveInstruction(id: string, text: string) {
+    rulesStatus = 'Updating & applying…';
+    try {
+      await sendCommand({ type: 'updateInstruction', id, patch: { text } });
+      rulesStatus = 'Rule updated.';
+    } catch (err) {
+      rulesStatus = err instanceof Error ? err.message : String(err);
+    }
+  }
+  async function deleteInstruction(id: string) {
+    await sendCommand({ type: 'deleteInstruction', id });
+  }
+  async function applyRulesNow() {
+    rulesStatus = 'Applying to open tabs…';
+    try {
+      const r = await sendCommand({ type: 'applyInstructionsNow' });
+      rulesStatus = r.tabsGrouped > 0 ? `Applied · ${r.tabsGrouped} tabs moved.` : 'Nothing to change.';
+    } catch (err) {
+      rulesStatus = err instanceof Error ? err.message : String(err);
+    }
+  }
 
   async function refresh() {
     try {
@@ -388,6 +430,38 @@
     </div>
   </section>
 
+  <!-- CUSTOM RULES --------------------------------------------------------- -->
+  <section class="space-y-4">
+    <h2 class="text-lg font-semibold tracking-tight">Custom rules</h2>
+    <p class="text-xs text-ink-400 max-w-md">
+      Steer grouping in plain English. Each rule is compiled on your device (no cloud) and applies
+      to open tabs immediately and to new tabs as they open. When two rules conflict, the one higher
+      in the list wins. These are separate from the auto-learned rules under Insights.
+    </p>
+
+    <div class="max-w-md space-y-3">
+      <InstructionEditor onsubmit={addInstruction} />
+      <div class="flex items-center gap-3">
+        <button
+          type="button"
+          class="rounded-(--radius-md) bg-accent text-ink-0 px-3 py-1.5 text-sm hover:bg-accent-strong transition-colors"
+          onclick={applyRulesNow}
+        >
+          Apply to open tabs
+        </button>
+        {#if rulesStatus}
+          <span class="text-xs text-ink-400">{rulesStatus}</span>
+        {/if}
+      </div>
+      <InstructionList
+        instructions={instructionsList}
+        ontoggle={toggleInstruction}
+        onsave={saveInstruction}
+        ondelete={deleteInstruction}
+      />
+    </div>
+  </section>
+
   <!-- BOOKMARKS ------------------------------------------------------------ -->
   <section class="space-y-3">
     <h2 class="text-lg font-semibold tracking-tight">Bookmarks</h2>
@@ -501,7 +575,7 @@
         <div class="flex items-baseline gap-3">
           <span class="text-lg font-mono">{entitlements.gemma.used}</span>
           <span class="text-sm text-ink-400">
-            / {entitlements.gemma.isUnlimited ? '∞' : entitlements.gemma.limit} Gemma calls this month
+            / {entitlements.gemma.isUnlimited ? '∞' : entitlements.gemma.limit} backup-AI runs this month
           </span>
         </div>
         <div class="h-1 w-full overflow-hidden rounded-full bg-ink-100">
@@ -513,7 +587,7 @@
         <p class="text-xxs text-ink-400">
           Current plan:
           <span class="text-ink-700 font-medium">{entitlements.plan}</span>
-          {#if entitlements.isPro} — unlimited Gemma, automatic mode, bookmark sync, custom rules{/if}
+          {#if entitlements.isPro} — unlimited AI + bookmark sync{/if}
         </p>
       {/if}
 
@@ -577,8 +651,9 @@
             <p class="text-xxs text-err">{licenseError}</p>
           {/if}
           <p class="text-xxs text-ink-400">
-            Don't have a license? Tab Organizer is free with a 200-call/month Tier-2 soft cap.
-            Pro removes the cap, unlocks automatic mode + bookmark sync + custom rules.
+            Don't have a license? Tab Organizer is free — including automatic grouping and your own
+            custom rules — with a 300/month limit on the backup AI. Pro removes that limit and adds
+            bookmark sync. No login, ever.
           </p>
         </div>
       {/if}

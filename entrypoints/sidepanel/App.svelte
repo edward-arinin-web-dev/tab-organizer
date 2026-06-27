@@ -10,13 +10,26 @@
     gemmaDownload,
     type DownloadProgress as DLProgress,
   } from '~/core/storage/ai-status';
-  import { Logo, WorkspaceCard, DownloadProgress, ActivityStrip, DigestCard } from '~/ui';
+  import {
+    Logo,
+    WorkspaceCard,
+    DownloadProgress,
+    ActivityStrip,
+    DigestCard,
+    InstructionEditor,
+    InstructionList,
+  } from '~/ui';
+  import { instructions, type Instruction } from '~/core/storage/instructions';
   import X from '@lucide/svelte/icons/x';
   import Settings from '@lucide/svelte/icons/settings';
   import { buildDigest, dateKey, digestStore, domainStats, type Digest } from '~/core/digest/digest';
 
-  type Tab = 'spaces' | 'activity' | 'vault' | 'graph' | 'insights';
+  type Tab = 'spaces' | 'activity' | 'vault' | 'graph' | 'rules' | 'insights';
   let active = $state<Tab>('spaces');
+
+  // ---- Rules (user-authored Custom Rules) ----------------------------------
+  let instructionsList = $state<Instruction[]>([]);
+  let rulesStatus = $state('');
 
   // ---- Spaces --------------------------------------------------------------
   let allWorkspaces = $state<Workspace[]>([]);
@@ -65,28 +78,67 @@
     const u2 = activity.watch((a) => (activityList = a));
     const u3 = nanoDownload.watch((p) => (nanoProg = p));
     const u4 = gemmaDownload.watch((p) => (gemmaProg = p));
+    const u5 = instructions.watch((i) => (instructionsList = i));
     return () => {
       u1();
       u2();
       u3();
       u4();
+      u5();
     };
   });
 
   async function refreshAll() {
-    const [ws, act, ent, rules, doms] = await Promise.all([
+    const [ws, act, ent, rules, insts, doms] = await Promise.all([
       workspaces.list(),
       activity.list(),
       sendCommand({ type: 'getEntitlements' }),
       sendCommand({ type: 'listLearnedRules' }),
+      sendCommand({ type: 'listInstructions' }),
       domainStats.topDomains(5),
     ]);
     allWorkspaces = ws;
     activityList = act;
     entitlements = ent;
     learnedList = rules;
+    instructionsList = insts;
     topDomains = doms;
     digest = buildDigest(act, dateKey(Date.now()));
+  }
+
+  // ---- Custom Rules handlers ----------------------------------------------
+  async function addInstruction(text: string) {
+    rulesStatus = 'Adding & applying…';
+    try {
+      await sendCommand({ type: 'addInstruction', text });
+      rulesStatus = 'Rule added.';
+    } catch (err) {
+      rulesStatus = err instanceof Error ? err.message : String(err);
+    }
+  }
+  async function toggleInstruction(id: string, enabled: boolean) {
+    await sendCommand({ type: 'updateInstruction', id, patch: { enabled } });
+  }
+  async function saveInstruction(id: string, text: string) {
+    rulesStatus = 'Updating & applying…';
+    try {
+      await sendCommand({ type: 'updateInstruction', id, patch: { text } });
+      rulesStatus = 'Rule updated.';
+    } catch (err) {
+      rulesStatus = err instanceof Error ? err.message : String(err);
+    }
+  }
+  async function deleteInstruction(id: string) {
+    await sendCommand({ type: 'deleteInstruction', id });
+  }
+  async function applyRulesNow() {
+    rulesStatus = 'Applying to open tabs…';
+    try {
+      const r = await sendCommand({ type: 'applyInstructionsNow' });
+      rulesStatus = r.tabsGrouped > 0 ? `Applied · ${r.tabsGrouped} tabs moved.` : 'Nothing to change.';
+    } catch (err) {
+      rulesStatus = err instanceof Error ? err.message : String(err);
+    }
   }
 
   async function dismissDigest() {
@@ -240,6 +292,7 @@
       { id: 'activity', label: 'Activity' },
       { id: 'vault', label: 'Vault' },
       { id: 'graph', label: 'Graph' },
+      { id: 'rules', label: 'Rules' },
       { id: 'insights', label: 'Insights' },
     ] as t (t.id)}
       <button
@@ -373,6 +426,43 @@
           {/each}
         </ul>
       {/if}
+    {/if}
+
+    <!-- RULES TAB -->
+    {#if active === 'rules'}
+      <section class="space-y-3">
+        <div>
+          <h2 class="text-xxs uppercase tracking-wider text-ink-400 mb-1.5">Add a rule</h2>
+          <p class="text-xs text-ink-400 mb-2 leading-snug">
+            Plain English. Tell Tab Organizer how to group — it applies to open tabs now and to new
+            tabs as they open. Top rules win when two conflict.
+          </p>
+          <InstructionEditor onsubmit={addInstruction} />
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="rounded-(--radius-md) bg-accent text-ink-0 px-3 py-1.5 text-xs font-medium hover:bg-accent-strong transition-colors"
+            onclick={applyRulesNow}
+          >
+            Apply to open tabs
+          </button>
+          {#if rulesStatus}
+            <span class="text-xxs text-ink-400 truncate" aria-live="polite">{rulesStatus}</span>
+          {/if}
+        </div>
+
+        <div>
+          <h2 class="text-xxs uppercase tracking-wider text-ink-400 mb-1.5">Your rules</h2>
+          <InstructionList
+            instructions={instructionsList}
+            ontoggle={toggleInstruction}
+            onsave={saveInstruction}
+            ondelete={deleteInstruction}
+          />
+        </div>
+      </section>
     {/if}
 
     <!-- INSIGHTS TAB -->

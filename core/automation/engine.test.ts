@@ -115,6 +115,48 @@ describe('decide', () => {
   });
 });
 
+describe('decide — custom rules', () => {
+  it('routes a matching tab to the rule target (auto mode), beating a learned rule', () => {
+    const wsGh = ws('GitHub', ['https://github.com/a/pr/1']);
+    const d = decide(
+      { url: 'https://youtube.com/watch?v=1', title: 'video' },
+      [wsGh],
+      settings({ group: 'auto' }),
+      { workspaceId: wsGh.id }, // a learned auto rule that would otherwise fire
+      { kind: 'assign', target: 'Entertainment', match: { hosts: ['youtube.com'] } },
+    );
+    expect(d.action).toBe('auto');
+    expect(d.newGroup?.name).toBe('Entertainment');
+    expect(d.workspaceId).toBeUndefined();
+    expect(d.confidence).toBe(1);
+  });
+
+  it('never rule skips the tab (no bucket created) in auto mode', () => {
+    const d = decide(
+      { url: 'http://localhost:3000/', title: 'dev' },
+      [],
+      settings({ group: 'auto' }),
+      undefined,
+      { kind: 'never', match: { urlContains: ['localhost'] } },
+    );
+    expect(d.action).toBe('skip');
+    expect(d.newGroup).toBeUndefined();
+    expect(d.confidence).toBe(1);
+  });
+
+  it('does not act on a custom rule in assist mode', () => {
+    const d = decide(
+      { url: 'https://youtube.com/watch?v=1', title: 'video' },
+      [],
+      settings({ group: 'assist' }),
+      undefined,
+      { kind: 'assign', target: 'Entertainment', match: { hosts: ['youtube.com'] } },
+    );
+    expect(d.action).toBe('skip');
+    expect(d.reason).not.toBe('custom rule');
+  });
+});
+
 describe('bucketFor', () => {
   it('maps a known domain to its category label + color', () => {
     expect(bucketFor('https://github.com/x/pr/1')).toEqual({ name: '💻 Code', color: 'blue' });

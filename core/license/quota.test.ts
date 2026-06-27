@@ -44,7 +44,11 @@ describe('computeEntitlements', () => {
     const ent = computeEntitlements(lic, freshQuota);
     expect(ent.isPro).toBe(false);
     expect(ent.features.gemmaGrouping).toBe(true);
-    expect(ent.features.automaticMode).toBe(false);
+    // Generous free tier: automatic grouping (the default experience) and
+    // natural-language custom rules are free. Pro is bookmark sync + journal +
+    // unlimited Gemma.
+    expect(ent.features.automaticMode).toBe(true);
+    expect(ent.features.customRules).toBe(true);
     expect(ent.features.bookmarkSync).toBe(false);
   });
 
@@ -74,7 +78,8 @@ describe('computeEntitlements', () => {
     const lic: LicenseState = { plan: 'monthly', monthlyActive: false };
     const ent = computeEntitlements(lic, freshQuota);
     expect(ent.isPro).toBe(false);
-    expect(ent.features.automaticMode).toBe(false);
+    // bookmarkSync is Pro-only, so it's the signal that Pro isn't granted.
+    expect(ent.features.bookmarkSync).toBe(false);
   });
 
   it('Monthly plan: active subscription grants Pro', () => {

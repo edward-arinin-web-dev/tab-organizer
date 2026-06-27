@@ -10,6 +10,8 @@
  * else.
  */
 
+import type { Clause } from './instruction-schema';
+
 export const OFFSCREEN_TARGET = 'offscreen' as const;
 
 export type AiAvailabilityState = 'unavailable' | 'downloadable' | 'downloading' | 'available';
@@ -42,6 +44,13 @@ export type OffscreenRequest =
       tabs: ClusterCandidate[];
       preset: 'fast' | 'balanced' | 'thorough';
       embedderOnGpu: boolean;
+      /** Raw text of enabled Custom Rules, injected as a high-priority prompt block. */
+      userRules?: string[];
+    }
+  | {
+      target: typeof OFFSCREEN_TARGET;
+      kind: 'compileInstruction';
+      text: string;
     }
   | {
       target: typeof OFFSCREEN_TARGET;
@@ -77,6 +86,12 @@ export interface AvailabilityResult {
 
 export interface SemanticGroupResult {
   clusters: SemanticCluster[];
+}
+
+export interface CompileInstructionResult {
+  clauses: Clause[];
+  /** Which path produced the clauses: on-device Nano, or the regex floor. */
+  by: 'nano' | 'floor';
 }
 
 export interface SmartDedupeResult {

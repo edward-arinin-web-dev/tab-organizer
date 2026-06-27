@@ -1,5 +1,5 @@
 /**
- * Gemma (Tier-2) monthly soft quota. 200 calls/month for Free; unlimited for Pro.
+ * Gemma (Tier-2) monthly soft quota. 300 calls/month for Free; unlimited for Pro.
  *
  * Honor-system: stored in chrome.storage.local, tamper-trivial. The cap exists
  * to nudge conversion, not to police users. See research/BUSINESS.md §3 for
@@ -8,7 +8,7 @@
 
 import { storage } from '#imports';
 
-export const FREE_GEMMA_MONTHLY_LIMIT = 200;
+export const FREE_GEMMA_MONTHLY_LIMIT = 300;
 
 export interface QuotaState {
   /** Epoch ms of the 1st of the current period (UTC midnight). */

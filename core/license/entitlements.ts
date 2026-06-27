@@ -26,10 +26,14 @@ export function computeEntitlements(
       ruleGrouping: true,
       nanoGrouping: true,
       gemmaGrouping: isPro || remaining(quota, FREE_GEMMA_MONTHLY_LIMIT) > 0,
-      automaticMode: isPro,
+      // Free: automatic grouping is the default zero-touch experience
+      // (DEFAULT_AUTOMATION.group === 'auto'). Charging for it would gut the
+      // free product, so it stays free. Custom rules are free too — they
+      // compile on-device and cost nothing to run.
+      automaticMode: true,
       bookmarkSync: isPro,
       journalAggregation: isPro,
-      customRules: isPro,
+      customRules: true,
     },
     gemma: {
       used: quota.used,

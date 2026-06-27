@@ -13,6 +13,13 @@ import {
   SEMANTIC_GROUP_SCHEMA,
   SEMANTIC_GROUP_SYSTEM,
 } from '~/core/ai/grouping-prompt';
+import {
+  buildCompilePrompt,
+  buildUserRulesBlock,
+  COMPILE_SCHEMA,
+  floorCompile,
+  parseCompileResponse,
+} from '~/core/ai/instruction-schema';
 import { embed } from '~/core/ai/embeddings';
 import { buildCritiquePrompt, embeddingEjection } from '~/core/ai/refine';
 import {
@@ -29,6 +36,7 @@ import {
   type AvailabilityResult,
   type ClassifyAgainstAnchorResult,
   type ClusterCandidate,
+  type CompileInstructionResult,
   type DedupeCandidate,
   type OffscreenEnvelope,
   type OffscreenRequest,
@@ -95,7 +103,9 @@ async function handle(req: OffscreenRequest): Promise<unknown> {
     case 'availability':
       return availability();
     case 'semanticGroup':
-      return semanticGroup(req.tier, req.tabs, req.preset, req.embedderOnGpu);
+      return semanticGroup(req.tier, req.tabs, req.preset, req.embedderOnGpu, req.userRules);
+    case 'compileInstruction':
+      return compileInstruction(req.text);
     case 'smartDedupe':
       return smartDedupe(req.pairs);
     case 'summarize':
@@ -174,14 +184,17 @@ async function semanticGroup(
   tabs: ClusterCandidate[],
   preset: 'fast' | 'balanced' | 'thorough',
   embedderOnGpu: boolean,
+  userRules: string[] = [],
 ): Promise<SemanticGroupResult> {
   let draft: ReturnType<typeof parseSemanticGroupResponse>;
 
   if (tier === 'gemma') {
+    // Gemma's grouping client takes no prompt block; Custom Rules are still
+    // enforced deterministically by the background post-process.
     draft = await gemmaSemanticGroup(tabs);
   } else {
     const session = await getPromptSession();
-    const prompt = buildSemanticGroupPrompt(tabs);
+    const prompt = buildSemanticGroupPrompt(tabs, buildUserRulesBlock(userRules));
     const raw = await session.prompt(prompt, { responseConstraint: SEMANTIC_GROUP_SCHEMA });
     const validIds = new Set(tabs.map((t) => t.id));
     draft = parseSemanticGroupResponse(raw, validIds);
@@ -229,6 +242,33 @@ async function semanticGroup(
   }
 
   return { clusters: draft };
+}
+
+/**
+ * Compile one natural-language Custom Rule into structured clauses. Tries
+ * on-device Nano with a strict JSON constraint; on any failure (no model,
+ * throw, or empty result) falls back to the regex floor. No network.
+ */
+async function compileInstruction(text: string): Promise<CompileInstructionResult> {
+  if (typeof LanguageModel !== 'undefined') {
+    try {
+      const avail = await LanguageModel.availability({
+        expectedInputs: [{ type: 'text', languages: ['en'] }],
+        expectedOutputs: [{ type: 'text', languages: ['en'] }],
+      });
+      if (avail === 'available') {
+        const session = await getPromptSession();
+        const raw = await session.prompt(buildCompilePrompt(text), {
+          responseConstraint: COMPILE_SCHEMA,
+        });
+        const clauses = parseCompileResponse(raw);
+        if (clauses.length > 0) return { clauses, by: 'nano' };
+      }
+    } catch (err) {
+      console.warn('[tab-organizer] instruction compile via Nano failed; using floor', err);
+    }
+  }
+  return { clauses: floorCompile(text), by: 'floor' };
 }
 
 async function smartDedupe(

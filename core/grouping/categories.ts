@@ -61,13 +61,6 @@ export const CATEGORIES: Record<CategoryId, Category> = {
   search: { id: 'search', label: 'Search', emoji: '🔎', color: 'grey' },
 };
 
-/** Categories that never sub-split when their bucket spans multiple hosts. */
-export const NEVER_SUBSPLIT: ReadonlySet<CategoryId> = new Set<CategoryId>([
-  'system',
-  'local-dev',
-  'local-files',
-]);
-
 /**
  * Host-prefix overrides. Checked BEFORE the domain map so that
  * `maps.google.com` lands in Travel rather than `google.com` → Search.

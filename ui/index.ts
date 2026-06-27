@@ -8,6 +8,8 @@ export { default as AutoSlider } from './AutoSlider.svelte';
 export { default as Toast } from './Toast.svelte';
 export { default as DownloadProgress } from './DownloadProgress.svelte';
 export { default as SuggestionPanel } from './SuggestionPanel.svelte';
+export { default as InstructionEditor } from './InstructionEditor.svelte';
+export { default as InstructionList } from './InstructionList.svelte';
 export { default as ActivityStrip } from './ActivityStrip.svelte';
 export { default as DigestCard } from './DigestCard.svelte';
 export { default as ShimmerBar } from './ShimmerBar.svelte';

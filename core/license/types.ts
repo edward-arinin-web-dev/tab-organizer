@@ -55,13 +55,13 @@ export interface Entitlements {
     nanoGrouping: boolean;
     /** Free: 200/mo soft cap. Pro: unlimited. */
     gemmaGrouping: boolean;
-    /** Free: manual only. Pro: per-capability automatic mode. */
+    /** Free: automatic grouping is the default experience (kept free). */
     automaticMode: boolean;
     /** Free: workspaces concept exists; Pro: bookmark folder sync. */
     bookmarkSync: boolean;
     /** Free: stash recap exists; Pro: weekly journal aggregation. */
     journalAggregation: boolean;
-    /** Free: locked. Pro: custom regex + domain rules. */
+    /** Free: natural-language custom rules, compiled on-device. */
     customRules: boolean;
   };
   /** Gemma usage for the current calendar month. */

@@ -35,6 +35,13 @@ export const CONFIDENCE_FLOOR = 0.6;
  *  rustskin.com tabs" mistakes. */
 export const DOMINANT_DOMAIN_THRESHOLD = 3;
 
+/** A leftover (AI-missed) tab only attaches to a cluster by domain affinity
+ *  when that domain is a *multi-tab* member of the cluster (>= this many
+ *  tabs). A single-pole domain is too weak to absorb stray tabs — that's how
+ *  one stray YouTube tab used to get grafted into a cluster that happened to
+ *  hold a single YouTube tab. Such leftovers fall to the rule floor instead. */
+export const ATTACH_MIN_DOMAIN_TABS = 2;
+
 /**
  * Merge AI clusters with rule-based clusters for ungrouped / low-confidence
  * tabs. Two-pass merge:
@@ -73,15 +80,18 @@ export function mergeSemanticAndRules(
   const ejectedSet = new Set(ejected);
 
   // PASS 2 — Domain-affinity attach for AI-missed (but not ejected) tabs.
+  // Track per-domain *counts* (not just membership) so a leftover only joins a
+  // cluster where its domain is a strong (multi-tab) pole — see
+  // ATTACH_MIN_DOMAIN_TABS.
   const enriched = survivors.map((c) => {
-    const domains = new Set<string>();
+    const domainCounts = new Map<string, number>();
     for (const id of c.tabIds) {
       const tab = allTabs.find((t) => t.id === id);
       if (!tab) continue;
       const d = domainOf(tab.url);
-      if (d) domains.add(d);
+      if (d) domainCounts.set(d, (domainCounts.get(d) ?? 0) + 1);
     }
-    return { cluster: c, domains, tabIds: [...c.tabIds] };
+    return { cluster: c, domainCounts, tabIds: [...c.tabIds] };
   });
 
   const stillLeftover: TabLike[] = [];
@@ -101,7 +111,7 @@ export function mergeSemanticAndRules(
       continue;
     }
     const owners = enriched
-      .filter((e) => e.domains.has(d))
+      .filter((e) => (e.domainCounts.get(d) ?? 0) >= ATTACH_MIN_DOMAIN_TABS)
       .sort((a, b) => b.tabIds.length - a.tabIds.length);
     const owner = owners[0];
     if (owner) {
