@@ -30,9 +30,6 @@
   let entitlements = $state<Entitlements | null>(null);
   let license = $state<LicenseState | null>(null);
 
-  let licenseInput = $state('');
-  let licenseError = $state('');
-  let licenseBusy = $state(false);
 
   let importBusy = $state(false);
   let importStatus = $state('');
@@ -154,22 +151,6 @@
       lastError = err instanceof Error ? err.message : String(err);
     } finally {
       busyGemma = false;
-    }
-  }
-
-  async function applyLicense() {
-    if (!licenseInput.trim()) return;
-    licenseBusy = true;
-    licenseError = '';
-    try {
-      await sendCommand({ type: 'applyLicenseKey', key: licenseInput.trim() });
-      license = await sendCommand({ type: 'getLicenseState' });
-      entitlements = await sendCommand({ type: 'getEntitlements' });
-      licenseInput = '';
-    } catch (err) {
-      licenseError = err instanceof Error ? err.message : String(err);
-    } finally {
-      licenseBusy = false;
     }
   }
 
@@ -567,8 +548,7 @@
   <section class="space-y-3">
     <h2 class="text-lg font-semibold tracking-tight">Account & credits</h2>
     <p class="text-xs text-ink-400 max-w-md">
-      No login. No email. Pro is unlocked by an offline signed license key or an anonymous monthly
-      subscription via ExtensionPay.
+      No login. No email. No account — everything runs and stays on this device.
     </p>
     <div class="rounded-lg bg-ink-50 px-5 py-4 space-y-3">
       {#if entitlements}
@@ -627,35 +607,10 @@
           {/if}
         </div>
       {:else}
-        <div class="space-y-2">
-          <label for="lic" class="text-xs text-ink-400">Paste lifetime license key</label>
-          <div class="flex gap-2">
-            <input
-              id="lic"
-              bind:value={licenseInput}
-              type="text"
-              spellcheck="false"
-              placeholder="eyJ...=.AAA..."
-              class="flex-1 rounded-md bg-ink-0 ring-1 ring-ink-100 px-2.5 py-1.5 text-xs font-mono outline-none focus-visible:ring-accent"
-            />
-            <button
-              type="button"
-              class="rounded-md bg-ink-900 text-ink-0 px-3 py-1.5 text-xs hover:bg-ink-700 disabled:opacity-50"
-              onclick={applyLicense}
-              disabled={licenseBusy || !licenseInput.trim()}
-            >
-              Apply
-            </button>
-          </div>
-          {#if licenseError}
-            <p class="text-xxs text-err">{licenseError}</p>
-          {/if}
-          <p class="text-xxs text-ink-400">
-            Don't have a license? Tab Organizer is free — including automatic grouping and your own
-            custom rules — with a 300/month limit on the backup AI. Pro removes that limit and adds
-            bookmark sync. No login, ever.
-          </p>
-        </div>
+        <p class="text-xxs text-ink-400">
+          Tab Organizer is free — including automatic grouping and your own custom rules. The
+          optional backup AI engine has a 300/month limit. No login, ever.
+        </p>
       {/if}
     </div>
   </section>

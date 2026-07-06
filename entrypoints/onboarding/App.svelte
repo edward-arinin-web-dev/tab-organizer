@@ -220,11 +220,7 @@
         </p>
         <p class="mt-3 text-sm text-ink-700 leading-relaxed">
           Everything here is <strong>free</strong> — including automatic grouping and your own
-          grouping rules in plain English.
-        </p>
-        <p class="mt-2 text-sm text-ink-400 leading-relaxed">
-          Pro (optional, no login) removes the monthly limit on the backup AI and adds bookmark
-          sync. That’s it.
+          grouping rules in plain English. No login, no account, ever.
         </p>
         <div class="mt-auto pt-6 flex gap-2">
           <button
