@@ -1,6 +1,6 @@
 {
   "name": "tab-organizer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "AI-powered Chrome tab organizer — 100% on-device, no cloud LLM",

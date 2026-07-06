@@ -20,7 +20,7 @@ Get a clean dev iteration in place before touching product code.
 - Add Tailwind v4 (Vite plugin)
 - Add `chrome-types`; replace any `@types/chrome` references
 - Configure WXT entrypoints: `background.ts` (service worker), `popup/`, `options/`, `sidepanel/`, `offscreen.html`
-- Manifest baseline: `permissions: ['tabs', 'tabGroups', 'storage', 'offscreen', 'sidePanel']`, **no** host permissions
+- Manifest baseline: `permissions: ['tabs', 'tabGroups', 'storage', 'offscreen', 'sidePanel']`. (The shipped manifest later grew `bookmarks`, `contextMenus`, `alarms`, `notifications`, `omnibox`, plus huggingface.co `host_permissions` for the one-time Tier-2 weight download — see `wxt.config.ts` and `WEB_STORE_LISTING.md` for current truth.)
 - ESLint + Prettier + tsconfig strict
 - Vitest + `WxtVitest()` + `@webext-core/fake-browser` smoke test
 - Playwright extension-loader smoke test (open popup, assert title)
