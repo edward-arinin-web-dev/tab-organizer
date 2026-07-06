@@ -1,6 +1,7 @@
 <script lang="ts">
   import { sendCommand } from '~/core/messages';
   import { onboardingState } from '~/core/storage/onboarding';
+  import { Aurora } from '~/ui';
 
   const TOTAL = 4;
   let step = $state(0);
@@ -101,14 +102,11 @@
       </button>
     </div>
 
-    <!-- hero -->
-    <div class="mesh relative h-28 rounded-(--radius-lg) overflow-hidden mb-6 ring-1 ring-ink-100">
-      <div class="blob b1"></div>
-      <div class="blob b2"></div>
-      <div class="blob b3"></div>
-      <div class="absolute inset-0 flex items-center justify-center">
-        <span class="text-white/95 font-semibold tracking-tight drop-shadow">Tab Organizer</span>
-      </div>
+    <!-- hero: reuse the brand Aurora (scrim-protected; breathes for free in the
+         DOM). No baked wordmark — white-on-mesh fails contrast, and the page
+         heading below already carries the name. -->
+    <div class="mb-6">
+      <Aurora height="104px" />
     </div>
 
     <div class="rounded-(--radius-lg) bg-ink-0 ring-1 ring-ink-100 px-6 py-6 min-h-64 flex flex-col">
@@ -252,60 +250,3 @@
     </p>
   </div>
 </main>
-
-<style>
-  .mesh {
-    background: linear-gradient(120deg, var(--color-accent), var(--color-spark-strong));
-  }
-  .blob {
-    position: absolute;
-    width: 140px;
-    height: 140px;
-    border-radius: 50%;
-    filter: blur(26px) saturate(140%);
-    mix-blend-mode: screen;
-    opacity: 0.85;
-    will-change: transform;
-  }
-  .b1 {
-    background: var(--color-ws-1);
-    top: -40px;
-    left: 10%;
-    animation: drift1 11s ease-in-out infinite;
-  }
-  .b2 {
-    background: var(--color-ws-3);
-    top: -20px;
-    left: 45%;
-    animation: drift2 13s ease-in-out infinite;
-  }
-  .b3 {
-    background: var(--color-spark);
-    top: -30px;
-    left: 72%;
-    animation: drift1 9s ease-in-out infinite reverse;
-  }
-  @keyframes drift1 {
-    0%,
-    100% {
-      transform: translate(0, 0);
-    }
-    50% {
-      transform: translate(18px, 14px);
-    }
-  }
-  @keyframes drift2 {
-    0%,
-    100% {
-      transform: translate(0, 0);
-    }
-    50% {
-      transform: translate(-22px, 10px);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .blob {
-      animation: none !important;
-    }
-  }
-</style>

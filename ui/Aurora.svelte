@@ -47,8 +47,8 @@
     isolation: isolate;
     background: #06201e;
     box-shadow:
-      0 8px 26px -14px rgba(45, 212, 191, 0.45),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      0 8px 26px -14px rgba(45, 212, 191, 0.4),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   }
 
   .mesh {

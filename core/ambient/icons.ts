@@ -11,10 +11,12 @@
  * crisper aurora blending at the 16 px toolbar size than rendering natively.
  *
  * Motion model — `energy`:
- *   idle / success / focus  → energy 0   : STATIC frame. The service worker
- *                                           must be allowed to sleep, so the
- *                                           idle icon never animates. It still
- *                                           reads as "alive" via the mesh.
+ *   idle / success / focus  → energy 0   : STATIC frame by default so the
+ *                                           service worker can sleep. The badge
+ *                                           controller may pass `energyOverride`
+ *                                           (~0.22) to make idle gently breathe
+ *                                           for a bounded window after activity,
+ *                                           then it settles still and the SW sleeps.
  *   thinking                → energy 0.55 : aurora blobs drift, gentle breathe.
  *   working                 → energy 1.0  : blobs orbit faster + wider, stronger
  *                                           breathe + hotter glow. Reads as busy.
@@ -51,22 +53,30 @@ function energyFor(v: IconVariant): number {
   return 0;
 }
 
-function cacheKey(variant: IconVariant, phase: number, dotColor: string | null): string {
+function cacheKey(
+  variant: IconVariant,
+  phase: number,
+  dotColor: string | null,
+  energyOverride: number | null = null,
+): string {
+  const energy = energyOverride ?? energyFor(variant);
   // Animated variants quantize to ~18 phase buckets → cache the whole ring.
-  const p = energyFor(variant) > 0 ? Math.round(phase * 1000) : 0;
-  return `${variant}|${p}|${dotColor ?? ''}`;
+  const p = energy > 0 ? Math.round(phase * 1000) : 0;
+  const e = energyOverride != null ? Math.round(energyOverride * 100) : '';
+  return `${variant}|${p}|${dotColor ?? ''}|${e}`;
 }
 
 export function getIcon(
   variant: IconVariant,
   phase = 0,
   dotColor: string | null = null,
+  energyOverride: number | null = null,
 ): Record<number, ImageData> {
-  const key = cacheKey(variant, phase, dotColor);
+  const key = cacheKey(variant, phase, dotColor, energyOverride);
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const big = renderMaster(variant, phase, dotColor);
+  const big = renderMaster(variant, phase, dotColor, energyOverride);
   const out: Record<number, ImageData> = {};
   for (const size of SIZES) out[size] = downscale(big, size);
 
@@ -82,12 +92,15 @@ function renderMaster(
   variant: IconVariant,
   phase: number,
   dotColor: string | null,
+  energyOverride: number | null = null,
 ): OffscreenCanvas {
   const c = new OffscreenCanvas(RENDER, RENDER);
   const ctx = c.getContext('2d') as OffscreenCanvasRenderingContext2D;
   ctx.clearRect(0, 0, RENDER, RENDER);
 
-  const energy = energyFor(variant);
+  // energyOverride lets the badge controller drive a gentle idle "breathe"
+  // (energy ~0.22) on the otherwise-static idle variant, after recent activity.
+  const energy = energyOverride ?? energyFor(variant);
 
   // Tile geometry — a generous squircle with margin for the outer glow.
   const M = 11; // margin
@@ -97,7 +110,7 @@ function renderMaster(
   const cy = RENDER / 2;
 
   // Breathe: scale the whole tile a touch. Idle is dead-still (energy 0).
-  const breathe = 1 + energy * 0.045 * (Math.sin(phase * Math.PI * 2) * 0.5 + 0.5);
+  const breathe = 1 + energy * 0.075 * (Math.sin(phase * Math.PI * 2) * 0.5 + 0.5);
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(breathe, breathe);
@@ -110,7 +123,7 @@ function renderMaster(
   ctx.save();
   squircle(ctx, M, M, S, S, R);
   ctx.shadowColor = energy >= 1 ? 'rgba(110,231,183,0.42)' : 'rgba(45,212,191,0.3)';
-  ctx.shadowBlur = 7 + energy * 6;
+  ctx.shadowBlur = 7 + energy * 9;
   ctx.fillStyle = INK_DEEP;
   ctx.fill();
   if (energy > 0) {
@@ -177,7 +190,7 @@ function paintAurora(
   ctx.fillRect(m, m, s, s);
 
   const t = phase * Math.PI * 2;
-  const drift = energy * s * 0.16; // how far blobs wander
+  const drift = energy * s * 0.2; // how far blobs wander
   const blobR = s * 0.62;
 
   type Blob = { bx: number; by: number; px: number; py: number; color: string; a: number };

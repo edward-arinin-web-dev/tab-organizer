@@ -50,17 +50,48 @@ const WORKING_AUTO_EXPIRE_MS = 30 * 1000;
 const THINKING_AUTO_EXPIRE_MS = 4_000;
 const SUCCESS_VISIBLE_MS = 2_500;
 
+// Keep the working animation visible for at least this long so a fast
+// (sub-second) grouping is still noticed.
+const MIN_WORKING_MS = 1400;
+// Idle "breathe" window: the icon gently breathes for this long after any
+// activity, then settles still so the service worker can sleep.
+const BREATHE_WINDOW_MS = 20_000;
+const BREATHE_HZ = 2.5;
+const BREATHE_ENERGY = 0.22;
+
+let workingBeganAt = 0;
+let workingEndTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function clearWorking(jobId: string): Promise<void> {
+  const cur = await workingFlag.getValue();
+  if (cur && cur.jobId === jobId) {
+    await workingFlag.setValue(null);
+    await reconcile();
+  }
+}
+
 export const working = {
   begin: async (jobId: string): Promise<void> => {
+    workingBeganAt = Date.now();
+    if (workingEndTimer) {
+      clearTimeout(workingEndTimer);
+      workingEndTimer = null;
+    }
     await workingFlag.setValue({ until: Date.now() + WORKING_AUTO_EXPIRE_MS, jobId });
     await reconcile();
   },
   end: async (jobId: string): Promise<void> => {
-    const cur = await workingFlag.getValue();
-    if (cur && cur.jobId === jobId) {
-      await workingFlag.setValue(null);
-      await reconcile();
+    // Defer the clear if the job finished faster than the minimum visible time.
+    const remaining = MIN_WORKING_MS - (Date.now() - workingBeganAt);
+    if (remaining > 0) {
+      if (workingEndTimer) clearTimeout(workingEndTimer);
+      workingEndTimer = setTimeout(() => {
+        workingEndTimer = null;
+        void clearWorking(jobId);
+      }, remaining);
+      return;
     }
+    await clearWorking(jobId);
   },
 };
 
@@ -191,6 +222,10 @@ let animationTimer: ReturnType<typeof setTimeout> | null = null;
 let animationPhase = 0;
 let animationVariant: IconVariant | null = null;
 let animationDot: string | null = null;
+let animationMode: 'active' | 'breathe' | null = null;
+// Set on every reconcile (i.e. on any activity). The breathe loop runs while
+// `now < breatheUntil`, then settles still.
+let breatheUntil = 0;
 
 // One full conic-gradient rotation = 18 frames; at 8 Hz ≈ 2.25 s/rev. The 18
 // buckets line up with the icon cache (see icons.ts cacheKey).
@@ -203,12 +238,14 @@ function stopAnimation(): void {
   }
   animationVariant = null;
   animationDot = null;
+  animationMode = null;
 }
 
 function scheduleNextFrame(hz: number, variant: IconVariant, dot: string | null): void {
   if (animationTimer) clearTimeout(animationTimer);
   animationVariant = variant;
   animationDot = dot;
+  animationMode = 'active';
   const intervalMs = Math.max(80, Math.round(1000 / hz));
   animationTimer = setTimeout(() => {
     animationPhase = (animationPhase + PHASE_DELTA) % 1;
@@ -217,15 +254,45 @@ function scheduleNextFrame(hz: number, variant: IconVariant, dot: string | null)
   }, intervalMs);
 }
 
-function paintIcon(variant: IconVariant, phase: number, dot: string | null): void {
+// Gentle idle breathe after recent activity. Self-terminates once the breathe
+// window elapses: paints a still frame and stops the loop so the SW can sleep
+// and the icon freezes — no permanent keepalive.
+function scheduleBreatheFrame(variant: IconVariant, dot: string | null): void {
+  if (animationTimer) clearTimeout(animationTimer);
+  animationVariant = variant;
+  animationDot = dot;
+  animationMode = 'breathe';
+  const intervalMs = Math.max(80, Math.round(1000 / BREATHE_HZ));
+  animationTimer = setTimeout(() => {
+    if (Date.now() >= breatheUntil) {
+      animationPhase = 0;
+      paintIcon(variant, 0, dot);
+      stopAnimation();
+      return;
+    }
+    animationPhase = (animationPhase + PHASE_DELTA) % 1;
+    paintIcon(variant, animationPhase, dot, BREATHE_ENERGY);
+    scheduleBreatheFrame(variant, dot);
+  }, intervalMs);
+}
+
+function paintIcon(
+  variant: IconVariant,
+  phase: number,
+  dot: string | null,
+  energy: number | null = null,
+): void {
   try {
-    void chrome.action.setIcon({ imageData: getIcon(variant, phase, dot) });
+    void chrome.action.setIcon({ imageData: getIcon(variant, phase, dot, energy) });
   } catch {
     /* tolerate */
   }
 }
 
 export async function reconcile(): Promise<void> {
+  // Every reconcile is triggered by an activity signal (a watch firing or a tab
+  // event). Arm the breathe window so the idle icon gently breathes afterwards.
+  breatheUntil = Date.now() + BREATHE_WINDOW_MS;
   const snap = await snapshot();
   const intent = computeBadgeIntent(snap);
   let reducedMotion = false;
@@ -265,13 +332,22 @@ async function applyIntent(intent: BadgeIntent, reducedMotion = false): Promise<
   // Animation lifecycle. Reduced-motion paints a single static active frame
   // instead of spinning — phase 0 is a fixed conic, still clearly "active".
   const animate = !!intent.animationHz && intent.animationHz > 0 && !reducedMotion;
+  // Breathe only the plain resting state, and only inside the post-activity
+  // window, never under reduced-motion.
+  const breathe =
+    !animate && intent.kind === 'idle' && !reducedMotion && Date.now() < breatheUntil;
   if (animate) {
-    if (animationVariant !== intent.icon || animationDot !== dot) {
+    if (animationMode !== 'active' || animationVariant !== intent.icon || animationDot !== dot) {
       animationPhase = 0;
       scheduleNextFrame(intent.animationHz!, intent.icon, dot);
     }
     // Paint immediately so the user sees the change without waiting a tick.
     paintIcon(intent.icon, animationPhase, dot);
+  } else if (breathe) {
+    if (animationMode !== 'breathe' || animationVariant !== intent.icon || animationDot !== dot) {
+      scheduleBreatheFrame(intent.icon, dot);
+    }
+    paintIcon(intent.icon, animationPhase, dot, BREATHE_ENERGY);
   } else {
     stopAnimation();
     paintIcon(intent.icon, 0, dot);

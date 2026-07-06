@@ -115,7 +115,7 @@ const IDLE: BadgeIntent = {
 // visibly intensifies when real work (not just classification) is in flight.
 // The MV3 worker has no rAF and throttles timers, so these stay modest — the
 // per-frame `energy` (icons.ts) does most of the "intensity" lifting.
-const WORKING_HZ = 10;
+const WORKING_HZ = 14;
 const THINKING_HZ = 6;
 
 export function computeBadgeIntent(s: AmbientSnapshot): BadgeIntent {
