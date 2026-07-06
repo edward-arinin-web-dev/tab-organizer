@@ -27,6 +27,18 @@ export default defineConfig({
       'notifications',
     ],
     omnibox: { keyword: 'tabs' },
+    // Static idle-orb icons (rendered by design/render-icons.mjs). WXT
+    // auto-derives manifest.icons from public/icon/{size}.png; the explicit
+    // default_icon makes the toolbar show the branded orb before the service
+    // worker wakes and chrome.action.setIcon takes over.
+    action: {
+      default_icon: {
+        16: 'icon/16.png',
+        32: 'icon/32.png',
+        48: 'icon/48.png',
+        128: 'icon/128.png',
+      },
+    },
     // The ONLY allowed network destinations: HuggingFace's static model file
     // hosts. This is for Tier-2 on-device inference (Gemma 3 270M weights).
     // Per CLAUDE.md: no cloud LLM endpoints, ever. HuggingFace is a CDN for
