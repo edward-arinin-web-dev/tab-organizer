@@ -15,3 +15,10 @@ design/*.png
 
 # Stray Windows reserved-name file (cannot be tracked by git)
 nul
+
+# msys/bash crash dumps
+*.stackdump
+
+# Claude Code session artifacts
+.claude/
+report-prelaunch-audit-*.html
