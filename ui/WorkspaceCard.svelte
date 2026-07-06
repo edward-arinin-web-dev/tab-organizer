@@ -80,23 +80,21 @@
     <div class="border-t border-ink-100 px-3 py-2 space-y-2">
       {#if live.length > 0}
         <ul class="space-y-0.5">
-          {#each live as m (m.kind === 'live' ? m.tabId : m.kind === 'bookmark' ? m.bookmarkId : m.url)}
-            {#if m.kind === 'live'}
-              <li>
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 rounded px-1 py-0.5 hover:bg-ink-100 text-left"
-                  onclick={() => onfocus?.(m.tabId)}
-                >
-                  {#if m.favIconUrl}
-                    <img src={m.favIconUrl} alt="" class="size-3 shrink-0" />
-                  {:else}
-                    <span class="size-3 shrink-0 rounded-sm bg-ink-200"></span>
-                  {/if}
-                  <span class="truncate text-xs text-ink-700">{m.title}</span>
-                </button>
-              </li>
-            {/if}
+          {#each live as m (m.tabId)}
+            <li>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-1 py-0.5 hover:bg-ink-100 text-left"
+                onclick={() => onfocus?.(m.tabId)}
+              >
+                {#if m.favIconUrl}
+                  <img src={m.favIconUrl} alt="" class="size-3 shrink-0" />
+                {:else}
+                  <span class="size-3 shrink-0 rounded-sm bg-ink-200"></span>
+                {/if}
+                <span class="truncate text-xs text-ink-700">{m.title}</span>
+              </button>
+            </li>
           {/each}
         </ul>
       {/if}

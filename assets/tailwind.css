@@ -31,10 +31,12 @@
   --color-spark-strong: #0d9488;
 
   /* Status — used sparingly. ok stays in-brand teal; err rose is the one
-     deliberate out-of-family hue so danger actually stands out. */
+     deliberate out-of-family hue so danger actually stands out.
+     Light values are darkened for WCAG AA as text on ink-0/ink-50; the dark
+     theme re-brightens them below (bright hues carry contrast on dark). */
   --color-ok: #0f766e;
-  --color-warn: #f59e0b;
-  --color-err: #f43f5e;
+  --color-warn: #b45309;
+  --color-err: #be123c;
 
   --color-success: #0d9488;
   --color-success-soft: #ccfbf1;
@@ -104,6 +106,8 @@
     --color-accent: #2dd4bf; /* bright jade on dark; dark ink-0 text sits on it */
     --color-accent-soft: #0c2e2a;
     --color-accent-strong: #5eead4;
+    --color-warn: #f59e0b;
+    --color-err: #f43f5e;
   }
 }
 
@@ -123,6 +127,8 @@
   --color-accent: #2dd4bf;
   --color-accent-soft: #0c2e2a;
   --color-accent-strong: #5eead4;
+  --color-warn: #f59e0b;
+  --color-err: #f43f5e;
 }
 
 /* Global element baseline. */

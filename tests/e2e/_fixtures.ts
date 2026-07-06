@@ -9,6 +9,7 @@ export const test = base.extend<{
   context: BrowserContext;
   extensionId: string;
 }>({
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature requires the empty pattern
   context: async ({}, use) => {
     const context = await chromium.launchPersistentContext('', {
       headless: false,

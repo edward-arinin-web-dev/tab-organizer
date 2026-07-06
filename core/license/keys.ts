@@ -73,7 +73,7 @@ export async function verifyLicenseKey(key: string): Promise<LifetimePayload> {
   }
 
   const publicKey = await importEd25519PublicKey(LICENSE_PUBLIC_KEY_B64);
-  let ok = false;
+  let ok: boolean;
   try {
     ok = await crypto.subtle.verify(
       { name: 'Ed25519' },

@@ -25,6 +25,7 @@
       ? actions
       : actions.filter((a) => a.label.toLowerCase().includes(query.toLowerCase())),
   );
+  const active = $derived(filtered[cursor]);
 
   $effect(() => {
     if (open && !wasOpen) {
@@ -102,9 +103,7 @@
         role="combobox"
         aria-expanded="true"
         aria-controls="cmdpalette-list"
-        aria-activedescendant={filtered[cursor]
-          ? `cmdpalette-opt-${filtered[cursor].id}`
-          : undefined}
+        aria-activedescendant={active ? `cmdpalette-opt-${active.id}` : undefined}
         aria-label="Type a command"
         class="w-full border-b border-ink-100 bg-transparent px-3 py-2.5 text-sm outline-none text-ink-900 placeholder:text-ink-400"
       />

@@ -53,7 +53,7 @@ export interface Entitlements {
     ruleGrouping: boolean;
     /** Free: Chrome Prompt API (Gemini Nano), unlimited (free to us). */
     nanoGrouping: boolean;
-    /** Free: 200/mo soft cap. Pro: unlimited. */
+    /** Free: 300/mo soft cap. Pro: unlimited. */
     gemmaGrouping: boolean;
     /** Free: automatic grouping is the default experience (kept free). */
     automaticMode: boolean;

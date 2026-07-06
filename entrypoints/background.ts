@@ -61,9 +61,10 @@ import { boomerang } from '~/core/automation/boomerang';
 import { classifyReading } from '~/core/automation/readingQueue';
 import { domainStats } from '~/core/digest/digest';
 import { onboardingState } from '~/core/storage/onboarding';
+import { debug } from '~/core/log';
 
 export default defineBackground(() => {
-  console.log('[tab-organizer] background loaded', { id: browser.runtime.id });
+  debug('background loaded', { id: browser.runtime.id });
 
   // Ambient surfaces: toolbar badge + icon + tooltip + right-click menu.
   installAmbient((cmd) => handle(cmd));
@@ -578,14 +579,13 @@ async function applyTabToWorkspace(workspaceId: string, tabId: number): Promise<
   // Find or create a Chrome tab group titled w.name in the tab's window.
   const allGroups = await chrome.tabGroups.query({ windowId: tab.windowId });
   const matching = allGroups.find((g) => g.title === w.name);
-  let groupId: number;
   if (matching) {
-    groupId = (await chrome.tabs.group({
+    await chrome.tabs.group({
       tabIds: [tabId] as [number, ...number[]],
       groupId: matching.id,
-    })) as number;
+    });
   } else {
-    groupId = (await chrome.tabs.group({
+    const groupId = (await chrome.tabs.group({
       tabIds: [tabId] as [number, ...number[]],
       createProperties: { windowId: tab.windowId },
     })) as number;
@@ -805,7 +805,7 @@ async function applyLicenseKey(key: string): Promise<{ ok: true; plan: 'lifetime
     return { ok: true, plan: 'lifetime' };
   } catch (err) {
     if (err instanceof LicenseVerifyError) {
-      throw new Error(`Invalid license key (${err.reason})`);
+      throw new Error(`Invalid license key (${err.reason})`, { cause: err });
     }
     throw err;
   }
@@ -840,7 +840,7 @@ async function getCurrentWindowTabs(opts?: { groupable?: boolean }): Promise<{
       typeof t.url === 'string' &&
       (opts?.groupable ? isGroupable(t) : !t.pinned),
   );
-  console.log('[tab-organizer] queried current window', { windowId, tabCount: tabs.length });
+  debug('queried current window', { windowId, tabCount: tabs.length });
   return { windowId, tabs };
 }
 
@@ -881,7 +881,7 @@ async function groupNow(): Promise<{ groupsCreated: number; tabsGrouped: number;
     if (tier === 'gemma') {
       const gate = await gateGemmaCall();
       if (!gate.allowed) {
-        console.log('[tab-organizer] Gemma quota exhausted; falling back to rules', gate);
+        debug('Gemma quota exhausted; falling back to rules', gate);
         effectiveTier = 'rule';
       }
     }
@@ -984,7 +984,7 @@ async function groupNow(): Promise<{ groupsCreated: number; tabsGrouped: number;
       });
     }
 
-    console.log('[tab-organizer] groupNow done', {
+    debug('groupNow done', {
       tier: effectiveTier,
       groupsCreated,
       tabsGrouped,
@@ -1224,7 +1224,7 @@ async function doStash(
   const stashable = tabs.filter(
     (t) => isHttp(t.url) && (!filterIds || filterIds.has(t.id)),
   );
-  console.log('[tab-organizer] stash candidates', {
+  debug('stash candidates', {
     windowId,
     totalTabs: tabs.length,
     stashable: stashable.length,

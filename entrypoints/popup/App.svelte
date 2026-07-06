@@ -214,6 +214,7 @@
       tabCount = tabs.filter((t) => t.url?.startsWith('http')).length;
 
       // crude duplicate count via canonical URL
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local counter, not reactive state
       const seen = new Set<string>();
       let dups = 0;
       for (const t of tabs) {

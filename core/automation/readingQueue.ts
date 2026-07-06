@@ -72,15 +72,14 @@ export function classifyReading({ url, title }: ReadingProbe): ReadingClassifica
   let confidence = 0;
   const reasons: string[] = [];
 
-  let host = '';
-  let path = '';
+  let u: URL;
   try {
-    const u = new URL(url);
-    host = u.hostname.replace(/^www\./, '');
-    path = u.pathname;
+    u = new URL(url);
   } catch {
     return { looksLikeArticle: false, confidence: 0, reasons: ['url parse failed'] };
   }
+  const host = u.hostname.replace(/^www\./, '');
+  const path = u.pathname;
 
   // Hosts that publish almost exclusively articles get a big bump.
   // Match exact host OR any subdomain ("foo.substack.com" → substack.com).

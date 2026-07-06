@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { sendCommand, type ReviewUnreadResult } from '~/core/messages';
   import { workspaces, type Workspace, countByKind } from '~/core/storage/workspaces';
-  import { activity, canUndo, type ActivityEntry } from '~/core/storage/activity';
+  import { activity, type ActivityEntry } from '~/core/storage/activity';
   import type { Entitlements } from '~/core/license/types';
   import type { LearnedRule } from '~/core/automation/rules';
   import {
@@ -162,6 +162,7 @@
   }
 
   function buildTree(tabs: OpenTab[]): TreeNode[] {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local scratch map, not reactive state
     const byId = new Map<number, TreeNode>();
     for (const t of tabs) byId.set(t.id, { tab: t, children: [] });
     const out: TreeNode[] = [];
@@ -233,26 +234,6 @@
     if (s < 3600) return `${Math.floor(s / 60)}m ago`;
     if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
     return `${Math.floor(s / 86400)}d ago`;
-  }
-
-  function actionLabel(e: ActivityEntry): string {
-    const a = e.action;
-    switch (a.type) {
-      case 'auto-grouped':
-        return `Moved tab to space`;
-      case 'auto-deduped':
-        return `Closed duplicate`;
-      case 'auto-archived':
-        return `Archived stale tab`;
-      case 'suggestion-shown':
-        return `Suggested move`;
-      case 'suggestion-accepted':
-        return `You accepted suggestion`;
-      case 'suggestion-rejected':
-        return `You rejected suggestion`;
-      case 'manual-undo':
-        return `Manual undo`;
-    }
   }
 
   const liveWorkspaces = $derived(

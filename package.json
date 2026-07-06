@@ -25,6 +25,7 @@
     "tldts": "latest"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "latest",
     "@sveltejs/vite-plugin-svelte": "latest",
     "@tailwindcss/vite": "latest",

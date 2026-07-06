@@ -51,6 +51,7 @@ import {
   nanoDownload,
   type DownloadProgress,
 } from '~/core/storage/ai-status';
+import { debug } from '~/core/log';
 
 /**
  * Defensive wrapper around progress storage writes. If chrome.storage is
@@ -70,7 +71,7 @@ async function safeSetProgress(
   }
 }
 
-console.log('[tab-organizer] offscreen loaded');
+debug('offscreen loaded');
 
 let promptSession: LanguageModelSession | null = null;
 let summarizerSession: SummarizerSession | null = null;
