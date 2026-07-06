@@ -1,0 +1,5 @@
+# GitHub Pages config — only used to render PRIVACY.md as HTML for the
+# Chrome Web Store's required privacy-policy URL.
+theme: jekyll-theme-primer
+title: Tab Organizer
+description: On-device AI tab organization — your tabs never leave your device.

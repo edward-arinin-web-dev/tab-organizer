@@ -37,9 +37,9 @@ Productivity
 > - Network traffic only when you opt into the bundled Gemma 3 model — one-time weight download from HuggingFace.
 > - If you stay on Tier 1 (Chrome built-in) or rule-based mode: zero network calls.
 >
-> Full privacy policy: **&lt;HOSTED_PRIVACY_URL&gt;** — ⚠️ before submitting, publish PRIVACY.md to a
-> public URL (GitHub Pages or a repo raw/blob permalink) and paste that URL into the dashboard's
-> required "Privacy policy" field. A repo markdown file alone is not accepted by the dashboard.
+> Full privacy policy: **https://edward-arinin-web-dev.github.io/tab-organizer/PRIVACY.html** —
+> hosted via GitHub Pages from this repo (`PRIVACY.md`, rendered by Jekyll). Paste this URL into
+> the dashboard's required "Privacy policy" field.
 >
 > ### Requirements
 > - Chrome 138+

@@ -1,3 +1,7 @@
+---
+title: Privacy policy — Tab Organizer
+---
+
 # Privacy policy — Tab Organizer
 
 **Short version:** your tab data never leaves your machine.
